@@ -11,6 +11,8 @@ import itertools
 from collections.abc import Callable
 from typing import Any
 
+from numpy.random import SeedSequence
+
 from sandbox.core.protocol import Experiment, Result
 from sandbox.core.recorder import Trajectory, run_replicate
 from sandbox.core.registry import get_model
@@ -35,12 +37,15 @@ def run_experiment(
     params object (e.g. ``lambda d: WFParams(**d)``). It is supplied by the
     caller so the core stays agnostic about params shapes.
 
-    Reproducibility: replicate ``r`` at sweep point ``i`` uses an RNG spawned
-    from ``seed`` offset by the point index, so every (point, replicate) pair has
-    an independent yet fully determined stream.
+    Reproducibility: a single ``SeedSequence(seed)`` is spawned into one child
+    per sweep point, and each child is spawned into one generator per replicate.
+    Every (point, replicate) pair therefore gets an independent, collision-free,
+    fully determined stream from the one top-level ``seed``.
     """
     model = get_model(experiment.model)
     sweep_points = _expand_sweep(experiment.sweep)
+
+    point_seeds = SeedSequence(experiment.seed).spawn(len(sweep_points))
 
     trajectories: list[list[Trajectory]] = []
     final_observables: list[list[dict[str, float]]] = []
@@ -48,8 +53,7 @@ def run_experiment(
     for point_index, overrides in enumerate(sweep_points):
         merged = {**experiment.params, **overrides}
         params = params_factory(merged)
-        # Distinct, reproducible seed per sweep point so points don't share streams.
-        rngs = spawn_rngs(experiment.seed + point_index, experiment.replicates)
+        rngs = spawn_rngs(point_seeds[point_index], experiment.replicates)
 
         point_trajectories: list[Trajectory] = []
         point_finals: list[dict[str, float]] = []

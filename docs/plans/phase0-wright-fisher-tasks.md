@@ -14,6 +14,10 @@
 - [x] `uv run pytest` green (22 passed); `uv run ruff check .` clean
 - [x] demo produces the stochastic-vs-deterministic figure
 - [x] `CLAUDE.md`, dev docs, public repo
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`): lint + ValidationSuite on
+      Python 3.11/3.12/3.13
+- [x] anti-bias guard: `validate()` fails loudly if a terminable model's
+      replicates hit `max_steps` without absorbing (`Trajectory.terminated`)
 
 ## Next (Phase 1 — Gillespie / repressilator)
 

@@ -17,10 +17,18 @@ from sandbox.core.protocol import Model, State
 
 @dataclass
 class Trajectory:
-    """Times and per-observable value series from one replicate."""
+    """Times and per-observable value series from one replicate.
+
+    ``terminated`` records *why* the run stopped: ``True`` if the model reached a
+    terminal state, ``False`` if it was cut off at ``max_steps``. This matters for
+    validity — a statistic that assumes absorption (e.g. fixation probability) is
+    silently biased by truncated runs, so consumers can check this flag and fail
+    loudly instead. Always ``False`` for models without ``is_terminal``.
+    """
 
     times: list[float] = field(default_factory=list)
     series: dict[str, list[float]] = field(default_factory=dict)
+    terminated: bool = False
 
     def record(self, t: float, observables: dict[str, float]) -> None:
         self.times.append(float(t))
@@ -68,4 +76,5 @@ def run_replicate(
         if at_interval or terminal_now:
             traj.record(state.t, model.observables(state))
 
+    traj.terminated = bool(is_terminal and is_terminal(state))
     return traj

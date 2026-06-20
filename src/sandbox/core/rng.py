@@ -1,12 +1,19 @@
 """Seeded RNG plumbing — reproducibility lives here.
 
-The rule that matters: independent stochastic replicates must use *independently
-seeded* generators, and the way to get that right is ``SeedSequence.spawn`` —
-**not** ``default_rng(seed + i)``. Adjacent integer seeds can produce correlated
-streams, which would quietly bias replicate statistics (a fixation fraction that
-looks fine but is subtly wrong). Spawning derives well-separated child seeds from
-a parent ``SeedSequence``, so replicates are both independent and reproducible
-from the single top-level ``seed``.
+Independent stochastic replicates must use independently-seeded generators, and
+the robust, composable way to get that is ``SeedSequence.spawn`` rather than
+hand-constructing generators from adjacent integer seeds (``default_rng(seed +
+i)``). A ``SeedSequence`` runs its entropy through a hashing step before seeding
+the generator, so child seeds derived by ``spawn`` — and even nearby integer
+seeds — produce well-separated, statistically independent streams. Spawning is
+preferred because it composes: a parent sequence can spawn per-sweep-point
+children, each of which spawns per-replicate children, all reproducible from one
+top-level ``seed`` with no chance of two branches colliding.
+
+(The folklore that "adjacent seeds correlate" is really a legacy ``RandomState``
+/ raw-MT19937 hazard; the modern ``Generator`` + ``SeedSequence`` machinery
+mitigates it. We still spawn rather than add offsets — for composability and to
+keep the seeding tree explicit, not because ``seed + i`` is corrupt.)
 """
 
 from __future__ import annotations
@@ -20,11 +27,13 @@ def make_rng(seed: int) -> Generator:
     return np.random.default_rng(seed)
 
 
-def spawn_rngs(seed: int, n: int) -> list[Generator]:
-    """``n`` independent, reproducible generators derived from one ``seed``.
+def spawn_rngs(seed: int | SeedSequence, n: int) -> list[Generator]:
+    """``n`` independent, reproducible generators.
 
-    Uses ``SeedSequence(seed).spawn(n)`` so the streams are statistically
-    independent — the correct primitive for stochastic replicates.
+    ``seed`` may be an integer (top of a fresh seeding tree) or an existing
+    ``SeedSequence`` (a branch of one) — so callers can build a hierarchy, e.g.
+    spawn one ``SeedSequence`` per sweep point and then spawn ``n`` replicate
+    generators from each, with no risk of collisions between branches.
     """
-    parent = SeedSequence(seed)
+    parent = seed if isinstance(seed, SeedSequence) else SeedSequence(seed)
     return [np.random.default_rng(child) for child in parent.spawn(n)]

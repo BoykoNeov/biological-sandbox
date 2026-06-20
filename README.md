@@ -1,5 +1,7 @@
 # Biological Sandbox
 
+[![CI](https://github.com/BoykoNeov/biological-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/BoykoNeov/biological-sandbox/actions/workflows/ci.yml)
+
 > **Stochastic dynamics and the deterministic limits they collapse into.**
 
 A sandbox for simulating biological systems *and checking the simulation against

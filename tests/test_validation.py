@@ -49,6 +49,25 @@ def test_a_wrong_prediction_is_rejected(wf_params_factory, monkeypatch):
     assert not report.passed
 
 
+def test_truncated_runs_fail_loudly(wf_params_factory):
+    """A max_steps too small to reach fixation must raise, not silently bias the
+    fixation fraction toward 0. This is the anti-theater guard."""
+    exp = Experiment(
+        model="wright_fisher",
+        params={"N": 500, "p0": 0.5, "s": 0.0},
+        replicates=200,
+        observables=("fixed_A",),
+        seed=1,
+        max_steps=3,  # nowhere near enough generations to absorb
+    )
+    with pytest.raises(ValueError, match="without reaching a terminal state"):
+        validate(exp, wf_params_factory)
+
+    # Opting out is allowed (and then it does not raise).
+    report = validate(exp, wf_params_factory, require_termination=False)
+    assert isinstance(report.passed, bool)
+
+
 def test_validate_rejects_sweep(wf_params_factory):
     exp = Experiment(
         model="wright_fisher",
