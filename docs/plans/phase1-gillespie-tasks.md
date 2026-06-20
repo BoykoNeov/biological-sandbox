@@ -1,0 +1,67 @@
+# Phase 1 — tasks
+
+Build order is dependency-ordered; each `[ ]` is a commit-sized unit. Per the
+workflow rule, **write each validation/convergence test first and confirm it can
+fail** before the implementation is correct.
+
+## Core / protocol
+
+- [ ] `core/ode.py` — fixed-step RK4 integrator over a time grid (NumPy-only).
+- [ ] `core/protocol.py` — add optional `DeterministicLimitModel` protocol
+      (`deterministic_rhs`, `initial_concentrations`). Decide the unit convention:
+      `observables()` returns **concentrations** `x = n/Omega`.
+- [ ] `core/convergence.py` — `ConvergenceReport` + routine: integrate ODE once,
+      sweep system sizes `Omega`, compute per-replicate time-averaged discrepancy
+      to the ODE, average over replicates -> `D(Omega)`; pass/fail on the **log-log
+      slope CI ~ -1/2** (bootstrap/SE, not hardcoded epsilon). Fit only the
+      `T << Omega` middle regime; keep monotonicity as a soft diagnostic only.
+      Richardson-check the RK4 reference (halve dt) so its error doesn't floor D.
+
+## Engine + exactly-solvable models (the `validate()` track)
+
+- [ ] `models/gillespie.py` — `ReactionNetwork` (stoichiometry + macroscopic
+      `f_j(c)`) and pure `gillespie_step` (Direct Method, one event/step,
+      `a_j = Omega*f_j(n/Omega)`, handle `a0==0` terminal).
+- [ ] `models/birth_death.py` — model + plain-number params; `analytic_predictions`
+      = `{x: k/gamma}` (concentration, Omega-independent). Set `t_max >> 1/gamma`.
+      **Validation test first.**
+- [ ] `models/isomerization.py` — `A <-> B`, conserved total; `analytic_predictions`
+      = `{x_A: (k2/(k1+k2))*c_tot}`. **Validation test first** (the second exact
+      check: multi-species stoichiometry + conservation).
+- [ ] Fano-factor test: across-replicate `Var/<n> ~ 1` for birth-death, computed
+      in **counts** (`n = x*Omega`) — a stronger noise check than the mean alone.
+
+## Repressilator (the convergence track — headline)
+
+- [ ] `models/repressilator.py` — 6-species Hill network, system-size scaled
+      propensities, `DeterministicLimitModel` RHS; **no** `analytic_predictions`.
+- [ ] Confirm chosen params oscillate in the ODE (sanity) before convergence test.
+- [ ] Convergence test: `D(Omega)` decreases and slope ~ -1/2 across an `Omega`
+      sweep. **Write it first**; confirm a deliberately-broken propensity
+      (e.g. wrong `Omega` scaling) makes it FAIL — proving teeth, mirroring the
+      Phase-0 wrong-prediction test.
+
+## Viz + demo
+
+- [ ] Confirm `plot_replicates` overlays the ODE limit cycle via its existing
+      `deterministic=(t_grid, y_grid)` arg (no rewrite — just check units match).
+- [ ] `plot_convergence(D, Omega)` — log-log helper showing the `Omega^-1/2` law.
+- [ ] `demos/repressilator.py` — validate engine (birth-death/isomerization),
+      run the convergence sweep, save the overlay (replicates vs ODE limit cycle)
+      and the scaling figure. ASCII-only printed output.
+
+## Wiring + green
+
+- [ ] Register `birth_death`, `isomerization`, `repressilator` in
+      `models/__init__.py`.
+- [ ] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
+- [ ] Demo runs and produces both figures.
+- [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
+      stub; commit (Conventional Commits) and push per the batch/session-end ritual.
+
+## Explicitly deferred (do NOT do in Phase 1)
+
+- [ ] ~~Gibson-Bruck next-reaction method~~ — Direct Method suffices; profile first.
+- [ ] ~~tau-leaping~~ / ~~numba~~ — only against a real bottleneck at large `Omega`.
+- [ ] ~~bimolecular reactions~~ (combinatorial propensity correction).
+- [ ] ~~scipy stiff integrator~~ — RK4 is enough for the repressilator RHS.
