@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments / tooling
+.venv/
+.env
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# uv: commit uv.lock, ignore the local cache dir
+.uv/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Project outputs
+*.png
+*.gif
+*.mp4
+results/
+*.npz
