@@ -66,6 +66,11 @@ integrator + `DeterministicLimitModel` protocol (step 1), Gillespie SSA engine
 (step 2), `birth_death` — the engine's exact-closed-form check (step 3:
 stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts),
 and `isomerization` — the second exact check (step 4: `A<->B`, conserved total,
-stationary mean `(k2/(k1+k2))*c_tot` via `validate()`) all done. Next:
-`core/convergence.py`, then the repressilator (the `Omega^-1/2` scaling
-headline). See `docs/plans/`.
+stationary mean `(k2/(k1+k2))*c_tot` via `validate()`), and `core/convergence.py`
+— the second validation track (step 5: `convergence_report()` checks the log-log
+slope of `D(Omega)` is consistent with `-1/2` and significantly negative, with a
+statistical `max(bootstrap, OLS)` slope SE; validated on `birth_death`, teeth via a
+pure per-replicate-vs-mean-first unit test + a `D*sqrt(Omega)` magnitude anchor) —
+all done. Next: the repressilator (step 6 — the `Omega^-1/2` scaling headline; pass
+`observable_keys` explicitly for its 6 species, and the broken-Omega-scaling slope
+teeth live there). See `docs/plans/`.

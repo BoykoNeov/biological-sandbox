@@ -14,12 +14,24 @@ fail** before the implementation is correct.
 - [x] `core/protocol.py` — added optional `DeterministicLimitModel` protocol
       (`deterministic_rhs`, `initial_concentrations`). Unit convention decided and
       documented: `observables()` returns **concentrations** `x = n/Omega`.
-- [ ] `core/convergence.py` — `ConvergenceReport` + routine: integrate ODE once,
-      sweep system sizes `Omega`, compute per-replicate time-averaged discrepancy
-      to the ODE, average over replicates -> `D(Omega)`; pass/fail on the **log-log
-      slope CI ~ -1/2** (bootstrap/SE, not hardcoded epsilon). Fit only the
-      `T << Omega` middle regime; keep monotonicity as a soft diagnostic only.
-      Richardson-check the RK4 reference (halve dt) so its error doesn't floor D.
+- [x] `core/convergence.py` — `ConvergenceReport` + `convergence_report()`:
+      integrate ODE once (Omega-independent, concentration space), sweep system
+      sizes `Omega` via `run_experiment`, compute per-replicate time-averaged
+      discrepancy to the ODE (step-interpolated onto a grid), average over
+      replicates -> `D(Omega)`. Pass/fail on the **log-log slope**: consistent with
+      `-1/2` (`|slope+1/2| <= z*SE`) *and* significantly negative (`slope+z*SE < 0`),
+      with `slope_se = max(bootstrap-over-replicates SE, OLS fit SE)` — never a
+      hardcoded epsilon. `fit_mask` selects the `T << Omega` middle regime;
+      monotonicity is a soft diagnostic only. Richardson-checks the RK4 reference
+      (halve dt) and folds `reference_ok` into pass/fail; anti-bias guard raises if
+      any replicate fails to reach `t_max`. **Validated on `birth_death`** (its
+      *linear* dynamics make the LNA variance exact, so `-1/2` is clean at modest
+      Omega): slope ~ -0.49 +/- 0.011, z=3. Teeth are non-statistical — the pure
+      `_per_replicate_discrepancy` helper is unit-tested (per-replicate vs
+      mean-first give 1.0 vs 0.0), and a `D(Omega)*sqrt(Omega)` magnitude anchor
+      catches the mean-first (phase-diffusion) bug: it collapses ~sqrt(R) ~ 11x,
+      92% off vs 3.7% for the correct code. Broken-Omega-scaling slope teeth deferred
+      to the repressilator (step 6).
 
 ## Engine + exactly-solvable models (the `validate()` track)
 
