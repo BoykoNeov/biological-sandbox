@@ -37,9 +37,12 @@ fail** before the implementation is correct.
       Validation test written first (confirmed red). Also implements
       `DeterministicLimitModel` (`dc/dt = k - gamma*c`, tested). Starts at `c0=0`
       so the mean check is a real relaxation test; `t_max = 10/gamma`.
-- [ ] `models/isomerization.py` — `A <-> B`, conserved total; `analytic_predictions`
-      = `{x_A: (k2/(k1+k2))*c_tot}`. **Validation test first** (the second exact
-      check: multi-species stoichiometry + conservation).
+- [x] `models/isomerization.py` — `A <-> B`, conserved total; `analytic_predictions`
+      = `{x_A: (k2/(k1+k2))*c_tot}`. **Validation test first** (confirmed red).
+      Second exact check: multi-species stoichiometry + a conservation law. Fixes
+      the total `N = round(Omega*c_tot)` then splits off `n_A` so conservation is
+      exact under rounding; starts all-`B` (`cA0=0`) so the mean check is a real
+      relaxation test; `t_max = 5 >> 1/(k1+k2)`. Registered in `models/__init__.py`.
 - [x] Fano-factor test: across-replicate `Var/<n> ~ 1` for birth-death, computed
       in **counts** (`n = x*Omega`) — a stronger noise check than the mean alone.
       Tolerance `4 * sqrt(2/(R-1))` (Poisson SE), not a hardcoded epsilon.

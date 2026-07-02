@@ -63,7 +63,9 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 Phase 0 (Wright-Fisher) complete and validated. Phase 1 in progress: RK4
 integrator + `DeterministicLimitModel` protocol (step 1), Gillespie SSA engine
-(step 2), and `birth_death` — the engine's exact-closed-form check (step 3:
-stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts)
-all done. Next: `isomerization`, then `core/convergence.py` + the repressilator
-(the `Omega^-1/2` scaling headline). See `docs/plans/`.
+(step 2), `birth_death` — the engine's exact-closed-form check (step 3:
+stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts),
+and `isomerization` — the second exact check (step 4: `A<->B`, conserved total,
+stationary mean `(k2/(k1+k2))*c_tot` via `validate()`) all done. Next:
+`core/convergence.py`, then the repressilator (the `Omega^-1/2` scaling
+headline). See `docs/plans/`.
