@@ -23,9 +23,15 @@ fail** before the implementation is correct.
 
 ## Engine + exactly-solvable models (the `validate()` track)
 
-- [ ] `models/gillespie.py` — `ReactionNetwork` (stoichiometry + macroscopic
-      `f_j(c)`) and pure `gillespie_step` (Direct Method, one event/step,
-      `a_j = Omega*f_j(n/Omega)`, handle `a0==0` terminal).
+- [x] `models/gillespie.py` — `ReactionNetwork` (integer `(R,S)` stoichiometry +
+      single vector-valued macroscopic `rates(c) -> (R,)`) and pure
+      `gillespie_step` (Direct Method, one event/step, `a_j = Omega*f_j(n/Omega)`,
+      `a0==0` returns unchanged). `deterministic_rhs()` = `stoich.T @ rates(c)`
+      derives from the *same* `rates` (SSA and ODE can't drift apart); public
+      `propensities`/`total_propensity` helpers. Reaction selection uses
+      `searchsorted(cumsum, r, side="right")` — never picks a zero-propensity
+      reaction. Non-negativity emerges from vanishing rates (no clamping).
+      Engine unit tests written first (confirmed red).
 - [ ] `models/birth_death.py` — model + plain-number params; `analytic_predictions`
       = `{x: k/gamma}` (concentration, Omega-independent). Set `t_max >> 1/gamma`.
       **Validation test first.**
