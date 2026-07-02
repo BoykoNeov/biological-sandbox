@@ -34,9 +34,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+import numpy as np
 from numpy.random import Generator
 
 # Each model defines its own frozen-dataclass params type; the protocol is
@@ -98,6 +100,40 @@ class TerminableModel(Model, Protocol):
     """A model whose runs can end early (e.g. Wright-Fisher reaching fixation)."""
 
     def is_terminal(self, state: State) -> bool: ...
+
+
+@runtime_checkable
+class DeterministicLimitModel(Model, Protocol):
+    """A model that collapses into a deterministic ODE as the system grows.
+
+    This is the protocol expression of the project's organizing thread. A
+    stochastic model (Gillespie SSA at system size ``Omega``) declares the
+    mass-action ODE ``dc/dt = f(c)`` it converges to as ``Omega -> infinity``
+    (Kurtz's law of large numbers for density-dependent jump processes). Shared
+    services — the convergence pathway and the viz overlay — integrate that limit
+    with :func:`sandbox.core.ode.integrate_rk4` and compare it against the scaled
+    stochastic trajectory, consuming only these two methods.
+
+    **Unit convention (load-bearing, enforced project-wide):** ``observables()``
+    returns **concentrations** ``x = n / Omega``, *not* raw molecule counts. Only
+    then do the stochastic (counts) and deterministic (concentration) worlds line
+    up with no rescaling — ``deterministic_rhs`` and ``initial_concentrations``
+    both live in concentration space, so the ODE solution and ``observables()``
+    are directly comparable. (The lone exception is the Fano-factor check, which
+    reconstructs counts ``n = x * Omega`` because ``Var/<n> = 1`` is a statement
+    about counts.)
+
+    Autonomous by design: ``deterministic_rhs`` returns ``f(y) -> dy/dt`` with no
+    explicit time argument, matching :func:`sandbox.core.ode.integrate_rk4`.
+    """
+
+    def deterministic_rhs(self, params: Params) -> Callable[[np.ndarray], np.ndarray]:
+        """The mass-action RHS ``f(c) -> dc/dt`` in concentration space."""
+        ...
+
+    def initial_concentrations(self, params: Params) -> np.ndarray:
+        """Initial concentrations ``c0`` for the deterministic limit (``x = n/Omega``)."""
+        ...
 
 
 @dataclass(frozen=True)

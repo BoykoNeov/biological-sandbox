@@ -6,10 +6,14 @@ fail** before the implementation is correct.
 
 ## Core / protocol
 
-- [ ] `core/ode.py` — fixed-step RK4 integrator over a time grid (NumPy-only).
-- [ ] `core/protocol.py` — add optional `DeterministicLimitModel` protocol
-      (`deterministic_rhs`, `initial_concentrations`). Decide the unit convention:
-      `observables()` returns **concentrations** `x = n/Omega`.
+- [x] `core/ode.py` — fixed-step RK4 integrator (NumPy-only). Signature
+      `integrate_rk4(rhs, y0, t_max, dt) -> (t, y)`, dense uniform; convergence
+      code interpolates onto sample times (decouples step from sample grid so the
+      Richardson check is honest). Autonomous RHS `f(y)`. Test written first
+      (exact linear closed forms + 4th-order convergence; verified Euler fails it).
+- [x] `core/protocol.py` — added optional `DeterministicLimitModel` protocol
+      (`deterministic_rhs`, `initial_concentrations`). Unit convention decided and
+      documented: `observables()` returns **concentrations** `x = n/Omega`.
 - [ ] `core/convergence.py` — `ConvergenceReport` + routine: integrate ODE once,
       sweep system sizes `Omega`, compute per-replicate time-averaged discrepancy
       to the ODE, average over replicates -> `D(Omega)`; pass/fail on the **log-log

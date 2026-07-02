@@ -33,10 +33,10 @@ class Check:
     name: str
     predicted: float
     measured: float
-    sem: float          # standard error of the measured mean
-    tolerance: float    # z * sem
+    sem: float  # standard error of the measured mean
+    tolerance: float  # z * sem
     z: float
-    n: int              # replicates
+    n: int  # replicates
     passed: bool
 
     @property
