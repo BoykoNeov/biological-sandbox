@@ -61,6 +61,9 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 ## Status
 
-Phase 0 (Wright-Fisher vertical slice) complete and validated. Next: Phase 1 —
-Gillespie / repressilator (stochastic vs mass-action ODE limit). See
-`docs/plans/`.
+Phase 0 (Wright-Fisher) complete and validated. Phase 1 in progress: RK4
+integrator + `DeterministicLimitModel` protocol (step 1), Gillespie SSA engine
+(step 2), and `birth_death` — the engine's exact-closed-form check (step 3:
+stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts)
+all done. Next: `isomerization`, then `core/convergence.py` + the repressilator
+(the `Omega^-1/2` scaling headline). See `docs/plans/`.

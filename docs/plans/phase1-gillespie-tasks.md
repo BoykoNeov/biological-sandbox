@@ -32,14 +32,17 @@ fail** before the implementation is correct.
       `searchsorted(cumsum, r, side="right")` — never picks a zero-propensity
       reaction. Non-negativity emerges from vanishing rates (no clamping).
       Engine unit tests written first (confirmed red).
-- [ ] `models/birth_death.py` — model + plain-number params; `analytic_predictions`
+- [x] `models/birth_death.py` — model + plain-number params; `analytic_predictions`
       = `{x: k/gamma}` (concentration, Omega-independent). Set `t_max >> 1/gamma`.
-      **Validation test first.**
+      Validation test written first (confirmed red). Also implements
+      `DeterministicLimitModel` (`dc/dt = k - gamma*c`, tested). Starts at `c0=0`
+      so the mean check is a real relaxation test; `t_max = 10/gamma`.
 - [ ] `models/isomerization.py` — `A <-> B`, conserved total; `analytic_predictions`
       = `{x_A: (k2/(k1+k2))*c_tot}`. **Validation test first** (the second exact
       check: multi-species stoichiometry + conservation).
-- [ ] Fano-factor test: across-replicate `Var/<n> ~ 1` for birth-death, computed
+- [x] Fano-factor test: across-replicate `Var/<n> ~ 1` for birth-death, computed
       in **counts** (`n = x*Omega`) — a stronger noise check than the mean alone.
+      Tolerance `4 * sqrt(2/(R-1))` (Poisson SE), not a hardcoded epsilon.
 
 ## Repressilator (the convergence track — headline)
 

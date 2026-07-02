@@ -8,7 +8,18 @@ the verifiable/exploratory split.
 
 from __future__ import annotations
 
-from sandbox.models import wright_fisher  # noqa: F401  (import triggers registration)
+from sandbox.models import (
+    birth_death,  # noqa: F401  (import triggers registration)
+    wright_fisher,  # noqa: F401  (import triggers registration)
+)
+from sandbox.models.birth_death import BirthDeath, BirthDeathParams, BirthDeathState
 from sandbox.models.wright_fisher import WFParams, WFState, WrightFisher
 
-__all__ = ["WFParams", "WFState", "WrightFisher"]
+__all__ = [
+    "BirthDeath",
+    "BirthDeathParams",
+    "BirthDeathState",
+    "WFParams",
+    "WFState",
+    "WrightFisher",
+]
