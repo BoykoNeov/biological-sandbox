@@ -33,6 +33,18 @@ fail** before the implementation is correct.
       92% off vs 3.7% for the correct code. Broken-Omega-scaling slope teeth deferred
       to the repressilator (step 6).
 
+- [x] `core/recorder.py` — `run_replicate` evaluated `is_terminal(state)` **twice
+      per iteration** (loop condition + `terminal_now`). For a Gillespie model
+      `is_terminal` ends in an absorbing-state check that re-evaluates the whole
+      propensity vector, so every event re-ran the model's `rates` an extra time
+      (profiled: `rates` called 3x per event, `propensities` = 41% of runtime).
+      Now evaluated once per state and reused; the initial state is still tested
+      *before* the loop because a model can be terminal at `t=0` (Wright-Fisher
+      initialized at fixation). No RNG stream moves — the birth-death convergence
+      config reproduces **bit-identically** (slope -0.48886136889992604, all five
+      `D(Omega)`), at 26.4s -> 18.0s. Found while pricing the repressilator, but a
+      win for every model.
+
 ## Engine + exactly-solvable models (the `validate()` track)
 
 - [x] `models/gillespie.py` — `ReactionNetwork` (integer `(R,S)` stoichiometry +
@@ -61,13 +73,48 @@ fail** before the implementation is correct.
 
 ## Repressilator (the convergence track — headline)
 
-- [ ] `models/repressilator.py` — 6-species Hill network, system-size scaled
+- [x] `models/repressilator.py` — 6-species Hill network, system-size scaled
       propensities, `DeterministicLimitModel` RHS; **no** `analytic_predictions`.
-- [ ] Confirm chosen params oscillate in the ODE (sanity) before convergence test.
-- [ ] Convergence test: `D(Omega)` decreases and slope ~ -1/2 across an `Omega`
-      sweep. **Write it first**; confirm a deliberately-broken propensity
-      (e.g. wrong `Omega` scaling) makes it FAIL — proving teeth, mirroring the
-      Phase-0 wrong-prediction test.
+      Species order `(m1,m2,m3,p1,p2,p3)`, repression `p3-|m1, p1-|m2, p2-|m3`;
+      exports `OBSERVABLE_KEYS` to pass explicitly to `convergence_report`. A
+      cyclically symmetric IC (`p1_0==p2_0==p3_0`) is **rejected** — that manifold
+      is invariant and does not oscillate, which would give a flat reference.
+- [x] Confirm chosen params oscillate in the ODE (sanity) before convergence test.
+      Done as an ODE-only slice *first* (no SSA, so it also priced the sweep via
+      `events ~ Omega * int sum_j f_j(c(t)) dt`). Key finding: **`beta=5` does not
+      oscillate** — it damps to the fixed point (m1 amplitude 136 -> 60 over 60
+      time units); `(beta+1)^2/beta` is minimized at `beta=1`. Chosen
+      `alpha=216, alpha0=0.216, n_hill=2, beta=1`; **period 16.095**, amplitude
+      ratio last/mid cycle over 19 periods = 1.00000. Richardson over T=300:
+      4.4e-10 at `dt=1e-3` (4.5e-6 at `dt=1e-2`) — the reference floor is a
+      non-issue here, contrary to the worry that a limit cycle would accumulate
+      phase error.
+- [x] Convergence test: slope ~ -1/2 across the `Omega` sweep, with the broken-
+      propensity teeth. Config measured, not guessed: `t_max` = 2 periods (a
+      single-oscillation time average inherits phase-alignment noise);
+      `fit_mask` excludes `Omega <= 1`, which sit in the **phase-saturation knee**
+      (`D` capped near the fully-dephased `O(amplitude)` ~45, visible as
+      `D*sqrt(Omega)` falling *below* the plateau: 22.3, 24.5 vs ~26) — those
+      points are still run and printed with a blank flag so the knee stays visible;
+      `Omega` pushed to 16 for **lever arm** (OLS slope SE ~
+      `sigma/(sqrt(K)*sd(log Omega))`, so widening the range beat adding
+      replicates: SE 0.0975 over `[2,8]` vs 0.0734 out to 16 at the same `R`).
+      Result seed 0: **slope -0.4606 +/- 0.0734**, CI[3 SE] = [-0.681, -0.240],
+      PASS in ~245 s; seed 1 verified offline (-0.5191 +/- 0.1093, PASS), so the
+      pass is not seed-luck. Single seed in the suite (a second would dominate it).
+      **Teeth (both FAIL, as required):** fixed-`Omega` propensities (never
+      threaded through) -> slope **-0.1669 +/- 0.0722**, fails the
+      *significantly-negative* leg; `Omega^2` propensities -> slope
+      **-1.1315 +/- 0.1850**, which *is* significantly negative and is rejected
+      **only** by the *consistent-with--1/2* leg — proving that leg has teeth on
+      its own. Both are test-local subclasses overriding `initial_state` to embed
+      a wrong system size; `gillespie.py` is untouched and the ODE reference is
+      unchanged, isolating the fluctuation scaling alone.
+- [x] Non-statistical teeth alongside the slope: sustained limit cycle over ~10
+      periods, symmetric-IC rejection, `OBSERVABLE_KEYS` column-matching
+      `initial_concentrations` (a silent transposition would give a
+      wrong-but-plausible `D` the slope cannot catch), and `deterministic_rhs`
+      against the hand-written textbook equations.
 
 ## Viz + demo
 
@@ -80,9 +127,11 @@ fail** before the implementation is correct.
 
 ## Wiring + green
 
-- [ ] Register `birth_death`, `isomerization`, `repressilator` in
+- [x] Register `birth_death`, `isomerization`, `repressilator` in
       `models/__init__.py`.
-- [ ] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
+- [x] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
+      **79 passed in 362 s** — the repressilator convergence check is ~245 s of
+      that, which is the price of the phase's headline validation.
 - [ ] Demo runs and produces both figures.
 - [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
       stub; commit (Conventional Commits) and push per the batch/session-end ritual.

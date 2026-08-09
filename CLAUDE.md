@@ -71,6 +71,12 @@ stationary mean `(k2/(k1+k2))*c_tot` via `validate()`), and `core/convergence.py
 slope of `D(Omega)` is consistent with `-1/2` and significantly negative, with a
 statistical `max(bootstrap, OLS)` slope SE; validated on `birth_death`, teeth via a
 pure per-replicate-vs-mean-first unit test + a `D*sqrt(Omega)` magnitude anchor) —
-all done. Next: the repressilator (step 6 — the `Omega^-1/2` scaling headline; pass
-`observable_keys` explicitly for its 6 species, and the broken-Omega-scaling slope
-teeth live there). See `docs/plans/`.
+and `repressilator` — the headline (step 6: 6-species Elowitz-Leibler Hill network,
+**no** `analytic_predictions`, validated by `convergence_report` at slope
+`-0.4606 +/- 0.0734`, with broken-Omega-scaling teeth failing at `-0.1669` and
+`-1.1315`) — all done. Two lessons worth carrying forward: `beta=1`, **not** the
+textbook `beta=5`, is what actually oscillates (beta=5 damps to the fixed point);
+and `fit_mask` must exclude the low-`Omega` **phase-saturation knee** (`Omega <= 1`
+here), spotted as `D*sqrt(Omega)` falling below the plateau. Next: step 7 viz
+(`plot_convergence` log-log helper + confirm the `plot_replicates` ODE overlay's
+units match) and step 8 `demos/repressilator.py`. See `docs/plans/`.
