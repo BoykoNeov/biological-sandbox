@@ -36,9 +36,11 @@ import sandbox.models  # noqa: F401  (registers models)
 from sandbox.core.convergence import (
     _per_replicate_discrepancy,
     _sample_on_grid,
+    check_grid_is_exact,
     convergence_report,
 )
 from sandbox.models.birth_death import BirthDeathParams
+from sandbox.models.hh_stochastic import HHStochasticParams
 
 # Birth-death convergence config. Omega spans exactly one decade (16 -> 256) with
 # 5 points; T = 6 = 6/gamma so the run is well past relaxation and T << Omega
@@ -117,6 +119,158 @@ def test_multi_species_discrepancy_averages_over_species_and_time():
     series = {"a": np.array([1.0, 1.0]), "b": np.array([3.0, 3.0])}
     d = _per_replicate_discrepancy(np.array([0.0, 1.0]), series, grid, ode, ("a", "b"))
     assert d == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Grid alignment — the Phase-2 addition, and why it is checked not assumed
+# ---------------------------------------------------------------------------
+
+
+def test_check_grid_is_exact_accepts_a_subset_of_the_recorded_times():
+    dt, n_steps, stride = 0.025, 1600, 8
+    times = np.arange(n_steps + 1, dtype=float) * dt
+    grid = np.arange(0, n_steps + 1, stride, dtype=float) * dt
+    check_grid_is_exact(times, grid)  # must not raise
+    # ...and the sampling really is a no-op: the sampled values ARE the recorded
+    # ones, so the step-hold contributes no error at all rather than a small one.
+    values = np.sin(times)
+    assert np.array_equal(_sample_on_grid(times, values, grid), values[::stride])
+
+
+def test_check_grid_is_exact_rejects_a_grid_one_ulp_low():
+    """One bit of drift is a whole step of error, which is the point of checking.
+
+    ``linspace(0, t_max, n_grid)`` looks like it lands on the recorded times and
+    mostly does — but where it falls a single ulp short, ``searchsorted`` returns
+    the *previous* recorded index. The resulting error does not shrink with
+    ``Omega``, so it would floor ``D(Omega)`` and flatten the slope while looking
+    like physics. Hence a check, not a comment.
+    """
+    times = np.arange(1601, dtype=float) * 0.025
+    grid = np.arange(0, 1601, 8, dtype=float) * 0.025
+    nudged = grid.copy()
+    nudged[5] = np.nextafter(nudged[5], -np.inf)
+    with pytest.raises(ValueError, match="not exactly recorded times"):
+        check_grid_is_exact(times, nudged)
+    # And the damage it would have done, made concrete: a whole step backwards.
+    assert _sample_on_grid(times, times, nudged)[5] == times[8 * 5 - 1]
+
+
+def test_linspace_alignment_is_a_coincidence_of_the_numbers():
+    """A ``linspace`` grid lands on the recorded times *sometimes*, and that is worse
+    than never.
+
+    The first version of this test asserted that ``linspace`` misaligns, and it
+    failed — at ``n_steps = 1600, stride = 8`` it aligns perfectly. The reason is
+    the whole lesson: ``linspace`` computes ``i * (t_max / (n_grid - 1))``, so it
+    matches ``(i * stride) * dt`` exactly when ``t_max / (n_grid - 1)`` is exactly
+    ``stride * dt`` in binary. Dividing by a **power of two** is exact, so stride
+    8 works and stride 3 does not. Swept over the plausible configurations, 373
+    of them misalign.
+
+    So the hazard is not "``linspace`` is wrong" but "``linspace`` is right until
+    somebody changes ``n_grid`` from 201 to 121", and the symptom is a flattened
+    slope rather than an error. That is precisely a case for a check instead of a
+    convention.
+    """
+    dt, n_steps = 0.025, 120
+    times = np.arange(n_steps + 1, dtype=float) * dt
+
+    aligned = np.linspace(0.0, n_steps * dt, n_steps // 8 + 1)
+    assert np.array_equal(aligned, times[::8])
+    check_grid_is_exact(times, aligned)  # power-of-two stride: fine, by luck
+
+    misaligned = np.linspace(0.0, n_steps * dt, n_steps // 3 + 1)
+    assert int(np.count_nonzero(misaligned != times[::3])) == 25
+    with pytest.raises(ValueError, match="not exactly recorded times"):
+        check_grid_is_exact(times, misaligned)
+
+
+# ---------------------------------------------------------------------------
+# compare_keys — comparing a subset of the limit's components
+# ---------------------------------------------------------------------------
+
+
+def _hh_factory(d: dict) -> HHStochasticParams:
+    return HHStochasticParams(**d)
+
+
+_HH_KEYS = ("V", "m", "h", "n")
+_HH_BASE = {"i_ext": 0.0, "dt": 0.05, "v0": -65.0}
+
+
+def test_compare_keys_rejects_a_name_that_is_not_a_limit_component():
+    with pytest.raises(ValueError, match="not in observable_keys"):
+        convergence_report(
+            "hh_stochastic",
+            _HH_BASE,
+            _hh_factory,
+            omegas=[1e4, 2e4],
+            t_max=0.5,
+            dt=0.01,
+            replicates=2,
+            observable_keys=_HH_KEYS,
+            compare_keys=("V", "na_open"),
+            omega_key="n_channels",
+            n_bootstrap=10,
+        )
+
+
+def test_compare_keys_lets_a_model_report_fewer_series_than_its_limit_has():
+    """A channel-state model has ``V`` and two occupancy fractions — no ``m``/``h``/``n``.
+
+    Its limit is nonetheless the full 4-D Hodgkin-Huxley ODE, so
+    ``observable_keys`` must name four columns while the *comparison* uses one.
+    Without ``compare_keys`` the pathway rejected this outright (the one-to-one
+    length guard), which is why the Phase-2 plan's "just pass
+    ``observable_keys=('V',)``" could not work as written.
+    """
+    report = convergence_report(
+        "hh_stochastic",
+        _HH_BASE,
+        _hh_factory,
+        omegas=[2e4, 8e4],
+        t_max=1.0,
+        dt=0.01,
+        replicates=3,
+        grid=np.arange(0, 21, 4, dtype=float) * 0.05,
+        require_exact_grid=True,
+        observable_keys=_HH_KEYS,
+        compare_keys=("V",),
+        omega_key="n_channels",
+        n_bootstrap=10,
+    )
+    assert report.discrepancy.shape == (2,)
+    assert np.all(np.isfinite(report.discrepancy))
+    # Not requested, so it must be inert rather than a silent False.
+    assert np.isnan(report.stochastic_delta) and report.stochastic_floor_ok
+
+
+def test_stochastic_floor_check_runs_and_reports():
+    """Plumbing for the symmetric floor check: halve the *model's own* step.
+
+    Correctness of the criterion is exercised by the Hodgkin-Huxley slope test,
+    which runs it in the regime it was designed for. Here it only has to happen
+    and produce a finite number that reaches ``passed``.
+    """
+    report = convergence_report(
+        "hh_stochastic",
+        _HH_BASE,
+        _hh_factory,
+        omegas=[2e4, 8e4],
+        t_max=1.0,
+        dt=0.01,
+        replicates=3,
+        grid=np.arange(0, 21, 4, dtype=float) * 0.05,
+        require_exact_grid=True,
+        observable_keys=_HH_KEYS,
+        compare_keys=("V",),
+        omega_key="n_channels",
+        stochastic_dt_key="dt",
+        n_bootstrap=10,
+    )
+    assert np.isfinite(report.stochastic_delta)
+    assert "stochastic_floor_ok" in str(report)
 
 
 # ---------------------------------------------------------------------------
