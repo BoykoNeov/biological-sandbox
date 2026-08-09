@@ -19,12 +19,15 @@ transition carries ``(3-i) alpha_m`` -- and the comparison is a genuine check.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
+from sandbox.core.convergence import convergence_report
 from sandbox.core.ode import integrate_rk4
 from sandbox.core.protocol import DeterministicLimitModel, Model
-from sandbox.core.registry import get_model
+from sandbox.core.registry import get_model, register
 from sandbox.models.hh_rates import alphas_betas, steady_state
 from sandbox.models.hh_stochastic import (
     K_CONDUCTING,
@@ -39,7 +42,7 @@ from sandbox.models.hh_stochastic import (
     na_propagator,
     subunit_propagator,
 )
-from sandbox.models.hodgkin_huxley import HHParams, hh_rhs
+from sandbox.models.hodgkin_huxley import HHParams, hh_rhs, resting_state
 
 PROBE_VOLTAGES = (-90.0, -65.0, -55.0, -40.0, 0.0, 40.0)
 PROBE_DTS = (0.001, 0.01, 0.025, 0.1)
@@ -535,6 +538,183 @@ def test_the_voltage_half_step_is_exact_not_merely_close() -> None:
         # in one line what the tolerance says in twelve digits.
         assert (nxt.v - state.v) * float(frozen_conductance_rhs(np.array([state.v]))[0]) >= 0.0
         state = nxt
+
+
+# ---------------------------------------------------------------------------
+# The convergence law: D(N) ~ N^{-1/2}, and the teeth that make it mean something
+# ---------------------------------------------------------------------------
+#
+# Config, every number of it measured before the test was written (the probes live
+# in temp/phase2-work/):
+#
+# * **Regime.** Sub-rheobase, subthreshold, started exactly AT the resting fixed
+#   point, so the deterministic reference is stationary and D(N) is a pure
+#   stationary fluctuation. This is not a convenience: Hodgkin-Huxley is a
+#   *threshold* system, and in the spiking regime low N changes the spike COUNT,
+#   which obeys no -1/2 law at all.
+# * **The low-N end is set by that threshold, and it was measured, not guessed.**
+#   At N = 1000 and 4000 the membrane fires spontaneously (max |V - V*| of 108 and
+#   103 mV), and D*sqrt(N) jumps from its plateau of ~71 to 266 and 109. Those two
+#   points alone drag an all-points slope to -0.734. The sweep therefore starts at
+#   16000, where max |V - V*| is 3.2 mV.
+# * **The high-N end is free**, because a step is O(#states) and independent of N:
+#   0.203 s per replicate at 1.6e4 and at 4.1e6 alike. So the lever arm is 256x
+#   for the same money, which is where the slope precision comes from.
+# * **dt = 0.025 ms** puts the N-independent splitting bias at 1.0e-3 mV, under 3%
+#   of the smallest D (0.031). Confirmed from the other side by the stochastic
+#   floor check below rather than trusted.
+# * **The grid is an exact subset of the recorded times.** state.t is
+#   step_index * dt, so np.arange(0, 1601, 8) * dt reproduces it bit-for-bit and
+#   the step-hold sampling becomes a no-op. require_exact_grid verifies it per
+#   replicate, because the failure would be an N-independent floor and its symptom
+#   a flattened slope rather than an error.
+# * **compare_keys=("V",)**: a channel-state model has occupancy counts, whose
+#   limits are m^3 h and n^4 -- there is no m, h or n to compare. Blending V (mV)
+#   with dimensionless gates in an L1 average would be unprincipled anyway.
+
+_N_CHANNELS = [16_000.0, 64_000.0, 256_000.0, 1_024_000.0, 4_096_000.0]
+_CONV_T_MAX = 40.0
+_CONV_DT = 0.025
+_CONV_STRIDE = 8
+_CONV_ODE_DT = 0.005
+_CONV_STEPS = round(_CONV_T_MAX / _CONV_DT)
+_CONV_GRID = np.arange(0, _CONV_STEPS + 1, _CONV_STRIDE, dtype=float) * _CONV_DT
+_ODE_KEYS = ("V", "m", "h", "n")
+_Z = 3.0
+_V_STAR = float(resting_state(HHParams(i_ext=0.0, t_max=1.0, dt=_CONV_DT))[0])
+_CONV_BASE = {"i_ext": 0.0, "dt": _CONV_DT, "v0": _V_STAR}
+
+
+class _FixedNChannels(HHStochastic):
+    """Channel counts pinned to a constant, ignoring the swept ``n_channels``.
+
+    The realistic bug of failing to thread the system size through. Fluctuations
+    never shrink, so ``D(N)`` is flat and the slope sits at zero. Measured at the
+    config above across seeds 0-3: slope **+0.0111, -0.0189, +0.0371, +0.0209**
+    with SEs 0.018-0.032 — ``significant=False`` every time.
+
+    Only the *significantly negative* leg is asserted against it, because that is
+    the leg that is **structurally** robust for a flat break: ``slope/SE`` for a
+    genuinely flat relationship does not improve with replicates, so more
+    replicates could never de-flake it and fewer cannot break it.
+    """
+
+    def initial_state(self, params: HHStochasticParams, rng: np.random.Generator):
+        return super().initial_state(replace(params, n_channels=100_000.0), rng)
+
+
+class _SqrtNChannels(HHStochastic):
+    """Channel counts scaled as ``200 sqrt(N)`` — noise that shrinks *too slowly*.
+
+    Effective size ``~sqrt(N)`` gives ``D ~ N^{-1/4}``: still decreasing, so the
+    *significantly negative* leg passes and only *consistent with -1/2* can reject
+    it. Without this tooth a green check would prove no more than "the noise goes
+    down somehow". Measured across seeds 0-3: slope **-0.2544, -0.2476, -0.2637,
+    -0.2364**, ``significant=True`` and ``consistent=False`` every time, with
+    ``|slope + 1/2| ~ 0.25`` against a tolerance of ``3 * 0.013 = 0.04`` — a 5.5x
+    margin.
+
+    **It is not the repressilator's ``Omega^2`` tooth, and could not be.** Squaring
+    N here would drive D to ~1.7e-5 mV, an order of magnitude *below* the 1.0e-3 mV
+    splitting bias, so the broken model would fail through a discretization floor
+    rather than through its scaling — a tooth that bites the wrong thing. The
+    ``200 sqrt(N)`` map is chosen instead precisely so the *effective* channel
+    count stays inside the clean window: it takes the swept 1.6e4..4.1e6 onto
+    2.5e4..4.0e5, above the spiking threshold and far above the bias.
+    """
+
+    def initial_state(self, params: HHStochasticParams, rng: np.random.Generator):
+        scaled = float(round(200.0 * np.sqrt(params.n_channels)))
+        return super().initial_state(replace(params, n_channels=scaled), rng)
+
+
+register("_test_hh_fixed_n", _FixedNChannels())
+register("_test_hh_sqrt_n", _SqrtNChannels())
+
+
+def _hh_convergence(model_name: str, seed: int, replicates: int, *, floor_check: bool):
+    return convergence_report(
+        model_name,
+        _CONV_BASE,
+        lambda d: HHStochasticParams(**d),
+        omegas=_N_CHANNELS,
+        t_max=_CONV_T_MAX,
+        dt=_CONV_ODE_DT,
+        replicates=replicates,
+        grid=_CONV_GRID,
+        require_exact_grid=True,
+        observable_keys=_ODE_KEYS,
+        compare_keys=("V",),
+        omega_key="n_channels",
+        seed=seed,
+        z=_Z,
+        n_bootstrap=300,
+        max_steps=_CONV_STEPS + 10,
+        stochastic_dt_key="dt" if floor_check else None,
+    )
+
+
+def test_channel_noise_discrepancy_scales_as_n_minus_half() -> None:
+    """The headline: ``D(N) ~ N^{-1/2}`` for channel noise. This is "done" for 2a.
+
+    Measured across seeds 0-3: slope **-0.5092, -0.4933, -0.4988, -0.5101** with
+    SEs 0.0106-0.0140, all passing. Seed 0 is pinned here because it is the
+    *worst* of the four — furthest from -1/2 — rather than the prettiest.
+
+    ``richardson_delta`` is exactly **0**: the ODE reference is started at the
+    fixed point and does not move, so halving its step changes nothing. That is a
+    real (if easy) pass of the high-N reference-floor check, and it is the reason
+    the stochastic-side check matters more here than the ODE-side one.
+
+    **The stochastic-side floor check is asserted here rather than in its own
+    test.** It was one at first, and cost 39 s to re-run an identical sweep for a
+    single extra assertion — the report this test already has carries it. An
+    ``N``-independent bias in ``step`` would floor ``D(N)`` at the largest ``N``
+    and flatten the slope, and the ODE-side Richardson check cannot see it.
+    Measured shift at ``N = 4.1e6`` across seeds 0-3: **0.0034, 0.0025, 0.0022,
+    0.0032 mV** against a quarter of ``D`` (0.0076-0.0086) — the exact channel
+    propagator doing the job it was chosen for.
+    """
+    report = _hh_convergence("hh_stochastic", seed=0, replicates=16, floor_check=True)
+    assert report.passed, str(report)
+    assert report.consistent and report.significant
+    assert report.reference_ok and report.stochastic_floor_ok
+    assert abs(report.slope + 0.5) <= _Z * report.slope_se
+
+    assert np.isfinite(report.stochastic_delta)
+    assert report.stochastic_delta < 0.25 * float(report.discrepancy[-1])
+
+    # Averaged per replicate, not mean-first (the phase-diffusion trap).
+    assert np.allclose(report.discrepancy, report.per_replicate.mean(axis=1))
+
+    # Magnitude anchor: D * sqrt(N) must sit on a plateau rather than merely lying
+    # on some straight line. Measured at ~65-71 across the sweep; the check is that
+    # the spread is small, which a wrong exponent could not produce.
+    anchor = report.discrepancy * np.sqrt(report.omegas)
+    assert anchor.max() / anchor.min() < 1.4, f"D*sqrt(N) = {anchor}"
+
+
+def test_fixed_channel_count_fails_the_convergence_check() -> None:
+    """Tooth 1: noise that never shrinks. Rejected by *significantly negative*."""
+    report = _hh_convergence("_test_hh_fixed_n", seed=0, replicates=6, floor_check=False)
+    assert not report.passed
+    assert not report.significant, str(report)
+    # Flat, not merely wrong: the swept 256x in N changes D by less than 30%.
+    spread = float(report.discrepancy.max() / report.discrepancy.min())
+    assert spread < 1.5, f"D = {report.discrepancy}"
+
+
+def test_sqrt_channel_count_fails_the_convergence_check() -> None:
+    """Tooth 2: noise that shrinks too slowly. Rejected by *consistent with -1/2* only.
+
+    The complementary leg, and the one that proves a passing check says ``-1/2``
+    rather than just "decreasing": ``significant`` stays **True** here.
+    """
+    report = _hh_convergence("_test_hh_sqrt_n", seed=0, replicates=12, floor_check=False)
+    assert not report.passed
+    assert not report.consistent, str(report)
+    assert report.significant, "the significantly-negative leg should NOT be what rejects this"
+    assert abs(report.slope + 0.25) < 0.06, f"expected ~ -1/4, got {report.slope:.4f}"
 
 
 @pytest.mark.parametrize(
