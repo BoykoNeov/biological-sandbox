@@ -1,7 +1,9 @@
 # Phase 1 — Gillespie / repressilator (plan)
 
-**Status: planned (not yet implemented).** Supersedes the "Next" stub in
-`phase0-wright-fisher-tasks.md`.
+**Status: complete.** All eight steps are implemented and green; see
+`phase1-gillespie-tasks.md` for what each one actually measured (the numbers there
+are recorded results, not targets). Supersedes the "Next" stub in
+`phase0-wright-fisher-tasks.md`. Next up is Phase 2 (Hodgkin-Huxley, Gray-Scott).
 
 ## Goal
 

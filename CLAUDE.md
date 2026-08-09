@@ -65,7 +65,7 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 ## Status
 
-Phase 0 (Wright-Fisher) complete and validated. Phase 1 in progress: RK4
+Phase 0 (Wright-Fisher) complete and validated. **Phase 1 complete**: RK4
 integrator + `DeterministicLimitModel` protocol (step 1), Gillespie SSA engine
 (step 2), `birth_death` — the engine's exact-closed-form check (step 3:
 stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts),
@@ -78,12 +78,23 @@ pure per-replicate-vs-mean-first unit test + a `D*sqrt(Omega)` magnitude anchor)
 and `repressilator` — the headline (step 6: 6-species Elowitz-Leibler Hill network,
 **no** `analytic_predictions`, validated by `convergence_report` at slope
 `-0.4606 +/- 0.0734`, with broken-Omega-scaling teeth failing at `-0.1363` and
-`-0.9904`, each verified across seeds 0-3) — all done. Lessons worth carrying
-forward: assert a broken-model tooth only on the leg that is *structurally* robust
-for that break (for a flat-slope break, `slope/SE` is replicate-independent, so
-more replicates never de-flake it); `beta=1`, **not** the
+`-0.9904`, each verified across seeds 0-3), `viz` (step 7: `plot_convergence`
+log-log helper — plain arrays, drawn-but-excluded knee, fit and guide both anchored
+at the fitted centroid — plus a *tested* `plot_replicates` ODE overlay, which needed
+no rewrite since both sides are concentrations), and `demos/repressilator.py`
+(step 8: engine-vs-closed-forms, the overlay figure, the scaling figure; about a
+minute on a deliberately reduced, seed-checked config that says so in its own
+output).
+
+Lessons worth carrying forward: assert a broken-model tooth only on the leg that is
+*structurally* robust for that break (for a flat-slope break, `slope/SE` is
+replicate-independent, so more replicates never de-flake it); `beta=1`, **not** the
 textbook `beta=5`, is what actually oscillates (beta=5 damps to the fixed point);
-and `fit_mask` must exclude the low-`Omega` **phase-saturation knee** (`Omega <= 1`
-here), spotted as `D*sqrt(Omega)` falling below the plateau. Next: step 7 viz
-(`plot_convergence` log-log helper + confirm the `plot_replicates` ODE overlay's
-units match) and step 8 `demos/repressilator.py`. See `docs/plans/`.
+`fit_mask` must exclude the low-`Omega` **phase-saturation knee** (`Omega <= 1`
+here), spotted as `D*sqrt(Omega)` falling below the plateau; a **figure carries a
+claim and gets a test like anything else** — the overlay's live trap is the ODE
+*column index* (a permuted protein is the right shape at the wrong phase), and both
+viz helpers were mutation-checked; and pin the *worst* seed of the ones you checked,
+not a representative one. Next: **Phase 2** (Hodgkin-Huxley, Gray-Scott) — the
+performance ceilings, where numba/JAX/WebGL get introduced against real profiling.
+See `docs/plans/` and HANDOFF.md §5.

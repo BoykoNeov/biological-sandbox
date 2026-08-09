@@ -130,12 +130,52 @@ fail** before the implementation is correct.
 
 ## Viz + demo
 
-- [ ] Confirm `plot_replicates` overlays the ODE limit cycle via its existing
-      `deterministic=(t_grid, y_grid)` arg (no rewrite — just check units match).
-- [ ] `plot_convergence(D, Omega)` — log-log helper showing the `Omega^-1/2` law.
-- [ ] `demos/repressilator.py` — validate engine (birth-death/isomerization),
-      run the convergence sweep, save the overlay (replicates vs ODE limit cycle)
-      and the scaling figure. ASCII-only printed output.
+- [x] Confirm `plot_replicates` overlays the ODE limit cycle via its existing
+      `deterministic=(t_grid, y_grid)` arg. **No rewrite needed** — `observables()`
+      returns concentrations and the ODE is integrated in concentration space, so
+      the two align unrescaled. What it needed was a *test*, and the live trap
+      turned out not to be units but the **column index**: `deterministic` takes a
+      single 1-D series, so a `(n_t, 6)` ODE solution must be sliced, and on this
+      cyclically symmetric limit cycle the wrong protein column is the right shape
+      at the wrong phase. `test_viz.py` runs one real replicate at `Omega=20`
+      (1.5 s), reads both series back **off the Axes**, and asserts it tracks the
+      overlay; the neighbouring column (4.9x-45x worse) and counts-vs-concentrations
+      (40x-440x) are the teeth. Thresholds measured across seeds 0-3, where the
+      discrepancy/amplitude ratio spans 10x on phase-diffusion luck (0.097, 0.010,
+      0.023, 0.011) — so the pinned seed is **0, the worst of the four**. The scale
+      check uses `std`, not `ptp`: `ptp` is a max-statistic one SSA spike moves,
+      leaving 1.2x margin against a counts-scaled mutant where `std` leaves 2.1x.
+      Also documented: a mistyped observable draws *nothing* while still drawing the
+      deterministic line (a clean-looking figure of no data).
+- [x] `plot_convergence(omegas, discrepancy, ...)` — log-log helper showing the
+      `Omega^-1/2` law. Takes **plain arrays, not a `ConvergenceReport`**, so its own
+      test costs zero SSA time (the suite is already 155 s); the demo unpacks a
+      report in one call. Two design points carry `convergence.py`'s stance into the
+      figure: masked-out points are still **drawn** (hollow markers — the knee is
+      evidence about where the law stops applying, and the figure is where that is
+      most visible), and both the fit line and the `-1/2` guide are anchored at the
+      **centroid of the fitted points**. Anchoring at the first point instead pins
+      the guide to the saturated knee and makes a passing check look like a failing
+      one — mutation-checked, that break fails the test. Artists carry `gid`s
+      (`FIT_GID`/`GUIDE_GID`/...) so tests locate them without indexing into
+      `ax.lines` (errorbar adds several artists) or matching legend prose; errorbar
+      puts its label on the *container*, not the line, hence the explicit tag.
+      All three viz tests were mutation-checked (ignore the mask; anchor at the
+      knee; overlay in counts) — each mutation fails the intended test.
+- [x] `demos/repressilator.py` — three acts: engine vs exact closed forms
+      (`birth_death`, `isomerization` via `validate`), the overlay figure
+      (`Omega=1` vs `Omega=8`, 6 replicates each over 2 periods, `record_every=20`),
+      and the convergence sweep + log-log figure. ASCII-only output, about a minute
+      on an idle machine (the convergence sweep alone measured 22.4 s).
+      The demo's convergence config is **reduced** (`R=6`, 1 period, out to
+      `Omega=16`) and says so in its own output — the authoritative check stays
+      `tests/test_repressilator.py`. It was seed-checked before being pinned so the
+      demo cannot print a red check on an unlucky draw: PASS at seeds 0, 1, 2 with
+      slopes -0.399, -0.411, -0.443 (~23 s each). `record_every` cuts both ways and
+      the two uses want opposite values — 1 for the slope run (sub-sampling sharpens
+      the interpolation *with* `Omega` and biases the slope), 20 for the figure.
+      The demo also prints the compensated `D*sqrt(Omega)` column so the knee is
+      visible as numbers, not only as hollow markers.
 
 ## Wiring + green
 
@@ -158,7 +198,16 @@ fail** before the implementation is correct.
         `tests/conftest.py`, per-worker, best-effort). Wall clock floors at the
         longest single test (~140 s), which 4 workers already reach, so `-n auto`
         would claim all 16 cores for nothing. 388 s -> 155 s.
-- [ ] Demo runs and produces both figures.
+- [x] Demo runs and produces both figures (`repressilator_overlay.png`,
+      `repressilator_convergence.png`; both gitignored). Verified by running it and
+      *looking at* the output, not just at the exit code. The overlay shows one
+      feature worth naming rather than glossing over: at small `Omega` the replicate
+      peaks sit systematically **above** the ODE rather than symmetrically around it.
+      That is a finite-size correction, not a bug — the Hill term is strongly
+      nonlinear, so the mean of the stochastic system is not the solution of the
+      mean-field equation — and it vanishes in the limit: the mean second-cycle peak
+      of `x_p1` measures **+29.2% at Omega=1, +10.9% at 4, +1.0% at 16**. Measured,
+      then written into the demo's own printed output.
 - [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
       stub; commit (Conventional Commits) and push per the batch/session-end ritual.
 
