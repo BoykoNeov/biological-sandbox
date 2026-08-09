@@ -30,13 +30,19 @@ packages = ["src/sandbox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# -n 4: the suite is dominated by a handful of multi-minute convergence checks, so
-# wall clock floors at the single longest test (~130 s). Four workers already reach
-# that floor; `-n auto` would claim all 16 cores for no further gain. Combined with
-# the below-normal priority set in tests/conftest.py, a full run stays polite to
-# whatever else is on the machine. Use `-p no:xdist` or `-n 0` to run serially when
-# debugging (parallel runs interleave output and hide `-s` prints).
-addopts = "-ra -n 4"
+# -n 6: the suite is dominated by a few multi-minute convergence checks, so wall
+# clock floors at the single longest test -- currently the repressilator slope check
+# at 122 s. Reaching that floor takes enough workers that the *other* long tests
+# never share one: the runners-up are 96 s (squared-Omega tooth), 27 s (fixed-Omega
+# tooth) and 2x ~21 s (birth-death). This was `-n 4`, whose comment claimed four
+# workers already reached the floor. That stopped being true once the 96 s tooth was
+# added -- xdist packed 122 s + 96 s onto one worker and the suite took 277 s.
+# Measured, same machine: -n 4 = 277 s, -n 6 = 129 s, -n 8 = 130 s. Six reaches the
+# floor, so `-n auto` would claim all 16 cores for nothing. Combined with the
+# below-normal priority set in tests/conftest.py, a full run stays polite to whatever
+# else is on the machine. Use `-p no:xdist` or `-n 0` to run serially when debugging
+# (parallel runs interleave output and hide `-s` prints).
+addopts = "-ra -n 6"
 
 [tool.ruff]
 line-length = 100

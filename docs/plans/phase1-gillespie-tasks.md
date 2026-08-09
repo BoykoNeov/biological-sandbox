@@ -182,7 +182,7 @@ fail** before the implementation is correct.
 - [x] Register `birth_death`, `isomerization`, `repressilator` in
       `models/__init__.py`.
 - [x] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
-      **79 passed in 155 s.** It first landed at 637 s (5x the pre-repressilator
+      **85 passed in 129 s.** It first landed at 637 s (5x the pre-repressilator
       122 s), which was too slow a development loop, so two things were done rather
       than hiding tests behind a `slow` marker:
       - **SSA optimization, 1.77x** (40.6 -> 22.9 us/event), all **bit-identical**
@@ -194,10 +194,18 @@ fail** before the implementation is correct.
         always), and `observables` builds its dict from one `tolist()` instead of a
         per-element generator. `Trajectory.record` avoiding `setdefault`'s throwaway
         list turned out to be a wash (0.443 vs 0.449 us) — kept for clarity only.
-      - **`-n 4` (pytest-xdist) at below-normal process priority** (set in
+      - **pytest-xdist at below-normal process priority** (set in
         `tests/conftest.py`, per-worker, best-effort). Wall clock floors at the
-        longest single test (~140 s), which 4 workers already reach, so `-n auto`
-        would claim all 16 cores for nothing. 388 s -> 155 s.
+        longest single test, so the worker count only has to be high enough that the
+        *other* long tests never share a worker with it. 388 s -> 155 s at `-n 4`.
+      - **`-n 4` -> `-n 6` (step 7-8 session).** The "four workers already reach the
+        floor" claim above stopped being true once the 96 s `squared_omega` tooth was
+        added: xdist packed it onto the same worker as the 122 s slope check and the
+        suite ran **277 s**. Caught by re-timing rather than trusting the recorded
+        155 s. Measured on one machine: `-n 4` = 277 s, `-n 6` = 129 s, `-n 8` =
+        130 s — six reaches the floor (122 s), so `-n auto` would still claim all 16
+        cores for nothing. Worth re-checking whenever a new multi-minute test lands:
+        the right `-n` is a function of the *runner-up* durations, not of core count.
 - [x] Demo runs and produces both figures (`repressilator_overlay.png`,
       `repressilator_convergence.png`; both gitignored). Verified by running it and
       *looking at* the output, not just at the exit code. The overlay shows one
@@ -208,8 +216,11 @@ fail** before the implementation is correct.
       mean-field equation — and it vanishes in the limit: the mean second-cycle peak
       of `x_p1` measures **+29.2% at Omega=1, +10.9% at 4, +1.0% at 16**. Measured,
       then written into the demo's own printed output.
-- [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
+- [x] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
       stub; commit (Conventional Commits) and push per the batch/session-end ritual.
+      The Phase 0 stub is repointed at Phase 2 and its two *wrong* Phase 1 guesses
+      are kept with corrections (it called for the next-reaction method, and for
+      "the stochastic **mean** converges to the ODE" — the phase-diffusion trap).
 
 ## Explicitly deferred (do NOT do in Phase 1)
 

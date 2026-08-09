@@ -9,7 +9,7 @@ and build order; this file is the working-session quick reference.
 ```bash
 uv sync --extra viz     # install deps + dev tools + matplotlib
 uv run pytest -q        # run tests = run the ValidationSuite (the real check)
-uv run pytest -q -n 0   # ...serially, when debugging (-n 4 is the default)
+uv run pytest -q -n 0   # ...serially, when debugging (-n 6 is the default)
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
