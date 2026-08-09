@@ -31,9 +31,17 @@ class Trajectory:
     terminated: bool = False
 
     def record(self, t: float, observables: dict[str, float]) -> None:
+        # Hot path: called once per SSA event. `setdefault(key, [])` builds a
+        # throwaway list on *every* call (once per observable per event) even when
+        # the key is present; the get-and-branch below allocates only on the first
+        # record of each key.
         self.times.append(float(t))
+        series = self.series
         for key, value in observables.items():
-            self.series.setdefault(key, []).append(float(value))
+            values = series.get(key)
+            if values is None:
+                values = series[key] = []
+            values.append(float(value))
 
     @property
     def final(self) -> dict[str, float]:

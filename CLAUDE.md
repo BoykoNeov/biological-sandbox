@@ -9,6 +9,7 @@ and build order; this file is the working-session quick reference.
 ```bash
 uv sync --extra viz     # install deps + dev tools + matplotlib
 uv run pytest -q        # run tests = run the ValidationSuite (the real check)
+uv run pytest -q -n 0   # ...serially, when debugging (-n 4 is the default)
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
@@ -27,7 +28,10 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
    `core.rng.spawn_rngs` (`SeedSequence.spawn`) — never `default_rng(seed + i)`.
    Every `Experiment` serializes and re-runs to the same `Result`.
 4. **Profile before optimizing.** Stay in NumPy until a real bottleneck forces
-   numba/JAX/WebGL (expected first at Gray-Scott grids and HH networks).
+   numba/JAX/WebGL (expected first at Gray-Scott grids and HH networks). When you
+   do optimize the SSA, the trajectory must stay **bit-identical** — every
+   recorded slope anchor depends on it. Fingerprint a replicate before and after
+   (`sha256` of times + series) rather than trusting that a change "looks safe".
 5. **Quarantine the speculative arc** under `models/ecosystem/`. Any model
    without a checkable prediction is exploratory and must be labelled so in code
    and UI. Guard the verifiable/exploratory boundary continuously.

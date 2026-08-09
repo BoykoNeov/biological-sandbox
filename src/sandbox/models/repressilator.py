@@ -56,11 +56,7 @@ import numpy as np
 from numpy.random import Generator
 
 from sandbox.core.registry import register
-from sandbox.models.gillespie import (
-    ReactionNetwork,
-    gillespie_step,
-    total_propensity,
-)
+from sandbox.models.gillespie import ReactionNetwork, gillespie_step
 
 # Species order, fixed once and shared by the network, the ODE vector and the
 # observable keys. Indices 0..2 are the mRNAs, 3..5 the proteins.
@@ -199,15 +195,23 @@ class Repressilator:
 
     def observables(self, state: RepressilatorState) -> dict[str, float]:
         # Concentrations x = n / Omega (the enforced project-wide unit convention).
+        # tolist() converts the whole vector in one C call and yields real Python
+        # floats; a per-element float(v) generator ran 7x per event and showed up
+        # in the profile. Same values, so trajectories are bit-identical.
         x = np.asarray(state.counts, dtype=float) / state.params.Omega
-        return dict(zip(OBSERVABLE_KEYS, (float(v) for v in x), strict=True))
+        return dict(zip(OBSERVABLE_KEYS, x.tolist(), strict=True))
 
     def is_terminal(self, state: RepressilatorState) -> bool:
-        # The intended terminal is the time horizon. The a0 == 0 guard is defensive:
-        # with alpha0 > 0 transcription never vanishes, so a0 > 0 always.
-        if state.t >= state.params.t_max:
-            return True
-        return total_propensity(state.network, state.counts, state.params.Omega) <= 0.0
+        # The time horizon is the ONLY terminal here — deliberately no a0 == 0
+        # absorbing check, unlike birth_death/isomerization. This runs once per
+        # event on the SSA hot path, and the check is a full propensity evaluation:
+        # it doubled the number of rates() calls per event (profiled at ~20% of
+        # runtime) to test a branch that provably cannot fire. Transcription is
+        # alpha/(1 + p^nH) + alpha0, which is strictly positive for any finite
+        # repressor concentration even when alpha0 == 0, so a0 > 0 always. Safety
+        # is unchanged at the loop level: gillespie_step still returns the state
+        # untouched when a0 == 0, and run_replicate is max_steps-bounded.
+        return state.t >= state.params.t_max
 
     # NOTE: deliberately no analytic_predictions. The deterministic limit is a limit
     # cycle; there is no stationary scalar to match. Validation goes through

@@ -142,9 +142,22 @@ fail** before the implementation is correct.
 - [x] Register `birth_death`, `isomerization`, `repressilator` in
       `models/__init__.py`.
 - [x] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
-      **79 passed in 637 s** — the repressilator convergence check is ~245 s and
-      the seed-robust `Omega^2` tooth ~150 s, which is the price of the phase's
-      headline validation plus proof that it can fail.
+      **79 passed in 155 s.** It first landed at 637 s (5x the pre-repressilator
+      122 s), which was too slow a development loop, so two things were done rather
+      than hiding tests behind a `slow` marker:
+      - **SSA optimization, 1.77x** (40.6 -> 22.9 us/event), all **bit-identical**
+        — verified by sha256-fingerprinting a replicate's times+series before and
+        after, and by re-running the birth-death anchor. Two changes: the
+        repressilator's `is_terminal` dropped its `a0 == 0` absorbing check (a full
+        propensity evaluation on the hot path, doubling `rates()` calls per event,
+        for a branch that *provably* cannot fire since `alpha/(1+p^nH) + alpha0 > 0`
+        always), and `observables` builds its dict from one `tolist()` instead of a
+        per-element generator. `Trajectory.record` avoiding `setdefault`'s throwaway
+        list turned out to be a wash (0.443 vs 0.449 us) — kept for clarity only.
+      - **`-n 4` (pytest-xdist) at below-normal process priority** (set in
+        `tests/conftest.py`, per-worker, best-effort). Wall clock floors at the
+        longest single test (~140 s), which 4 workers already reach, so `-n auto`
+        would claim all 16 cores for nothing. 388 s -> 155 s.
 - [ ] Demo runs and produces both figures.
 - [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
       stub; commit (Conventional Commits) and push per the batch/session-end ritual.

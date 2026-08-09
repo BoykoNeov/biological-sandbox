@@ -17,6 +17,7 @@ viz = ["matplotlib>=3.9"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.6",
     "ruff>=0.5",
 ]
 
@@ -29,7 +30,13 @@ packages = ["src/sandbox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# -n 4: the suite is dominated by a handful of multi-minute convergence checks, so
+# wall clock floors at the single longest test (~130 s). Four workers already reach
+# that floor; `-n auto` would claim all 16 cores for no further gain. Combined with
+# the below-normal priority set in tests/conftest.py, a full run stays polite to
+# whatever else is on the machine. Use `-p no:xdist` or `-n 0` to run serially when
+# debugging (parallel runs interleave output and hide `-s` prints).
+addopts = "-ra -n 4"
 
 [tool.ruff]
 line-length = 100
