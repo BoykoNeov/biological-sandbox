@@ -95,6 +95,44 @@ here), spotted as `D*sqrt(Omega)` falling below the plateau; a **figure carries 
 claim and gets a test like anything else** — the overlay's live trap is the ODE
 *column index* (a permuted protein is the right shape at the wrong phase), and both
 viz helpers were mutation-checked; and pin the *worst* seed of the ones you checked,
-not a representative one. Next: **Phase 2** (Hodgkin-Huxley, Gray-Scott) — the
-performance ceilings, where numba/JAX/WebGL get introduced against real profiling.
+not a representative one.
+
+**Phase 2 in progress** — Hodgkin-Huxley (2a) then Gray-Scott (2b); see
+`docs/plans/phase2-{plan,context,tasks}.md`. Two decisions shape it. First, the
+plan names **three categories of checkable claim** — *A* exact analytic
+(`analytic_predictions`), *B* asymptotic law (log-log slope + CI), *C*
+literature-anchored (rheobase, f-I, spike shape) — and **category C never enters
+`analytic_predictions` nor an assertion's bound**; it is reported in demos, and
+only *structural* facts about it are asserted. Second, HANDOFF's "validate
+Gray-Scott's pattern wavelength against LSA" was **reframed after measurement**:
+at Pearson's famous `(F, k)` there is no real non-trivial homogeneous steady
+state, so those patterns are not Turing patterns and LSA makes no claim about
+them. Phase 2 validates **`lambda(q)` itself** (sharper, works anywhere, spans a
+sign change) and labels the emergent pattern qualitative.
+
+Done so far: `hh_rates` (step 1 — the six rate functions, with `_linoid` for the
+removable `0/0` at exactly `V=-40`/`V=-55`, via `expm1`), `hh_voltage_clamp`
+(step 2 — the category-A lead anchor: clamped gating decouples into an exact
+`x_inf + (x0-x_inf)e^{-t/tau}`; also extracted a bit-identical `rk4_step`), and
+`hodgkin_huxley` (step 3 — deterministic 4-D model; `analytic_predictions` is the
+root-found fixed point and **raises** past the subcritical Hopf rather than
+returning a wrong-but-green number; explicit RK4 suffices at `tau_m_min = 0.0622
+ms`, so **no scipy**). Suite 139 passed in ~136 s.
+
+Lessons from Phase 2 so far: **self-consistency is not independence** — HH's
+root-find-vs-integrate agreement cannot catch a wrong `g_Na` or `m^2`-for-`m^3`,
+so the independent anchor is a *separately hand-transcribed* `textbook_rhs` in
+the test file; **mutate deterministic tests too, and check where the probes
+land** — one cancellation test passed its mutant because a float round-trip
+flipped which side of a guard threshold the probes hit, and two clamp tests
+measured the endpoint, which after full relaxation is machine noise regardless of
+`dt`; and **match the tolerance to the claim** — Richardson cannot see leftover
+transient, so stationarity and attraction need separate tests.
+
+Next: `hh_stochastic` (8-state Na + 5-state K *occupancy counts*, `O(#states)`
+per step and independent of `N`, with an **exact** factorized channel propagator
+— verified against a brute-force matrix exponential to 6.7e-16 — because a
+`rate*dt` scheme's `O(dt)` bias is `N`-independent and would floor `D(N)`), then
+the `D(N) ~ N^{-1/2}` check in a **sub-rheobase subthreshold** regime, since in
+the spiking regime low `N` changes the spike *count*, which obeys no `-1/2` law.
 See `docs/plans/` and HANDOFF.md §5.
