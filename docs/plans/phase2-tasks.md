@@ -55,25 +55,79 @@ targets — fill them in as each step lands.
       slowest length constant of the six, 80 mV), so the asymptotic test asserts
       per-gate bounds rather than one shared tolerance — a uniform `abs=1e-3` was
       simply wrong there, and it was the test that was wrong, not the code.
-- [ ] `models/hh_voltage_clamp.py` — clamped gating, `dx/dt = (x_inf - x)/tau`,
+- [x] `core/ode.py` — extracted `rk4_step(rhs, y, h)` from `integrate_rk4` so
+      protocol models can take a *single* RK4 increment inside `step` (HH and
+      Gray-Scott both need one; a dense trajectory is the wrong shape there).
+      `integrate_rk4` now calls it and is **bit-identical** — sha256 of `t` + `y`
+      across three RHS shapes matched before and after
+      (`eb4224500d0b4923dd80d2a031bed71cfd3943a21a2b0fd6b1a10bf9950a5b31`).
+- [x] `models/hh_voltage_clamp.py` — clamped gating, `dx/dt = (x_inf - x)/tau`,
       `analytic_predictions` from the exact `x(t) = x_inf + (x0 - x_inf)e^{-t/tau}`.
-      **The category-A lead anchor** — validates every rate function individually.
-      Test first, confirm red.
+      **The category-A lead anchor.** Test written first, confirmed red. 17 tests;
+      four mutants killed, 10-11 failures each: *tau doubled*, *RHS sign flipped*,
+      *start at `v_clamp` instead of `v_hold`* (removes the transient entirely),
+      *`x_inf` gates m/h transposed*.
+      - **Scope stated, not glossed:** the closed form is built from the same
+        `x_inf`/`tau` that `step` integrates, so an error *inside* a rate function
+        cancels on both sides. This file validates the integrator + the decoupled
+        gating structure; the rate functions are pinned independently by
+        `test_hh_rates.py`. Neither closes the loop alone.
+      - **Tolerance is measured, not typed.** The model is deterministic, so
+        `validate()`'s statistical SE is exactly zero and its tolerance degenerates;
+        the honest tolerance is *numerical*, so Richardson (`dt` vs `dt/2`) supplies
+        `sem_floor` on each run. Two replicates, not one — `validate()` returns
+        `sem = inf` for a single sample and the check would pass vacuously. The
+        replicates having distinct RNG streams and still agreeing exactly is itself
+        the determinism check.
+      - **Two of my own tests were wrong first, in the same way.** Both measured the
+        value at `t_max` — but by 10 ms every gate has fully relaxed onto `x_inf`,
+        so both the exact and numerical solutions agree there to ~1e-14 *whatever
+        `dt` was*. The endpoint carries no information about integration error: all
+        of it lives in the transient. Measured max-over-trajectory error at
+        `dt=0.01`: **1.1e-8 at v=-80, 8.9e-9 at v=0, 4.1e-8 at v=+20** (worst where
+        `tau_m` is fastest), versus **~1e-13 at the endpoint**. So the trajectory
+        test now uses the max over time against a Richardson bound, and the
+        order-4 check does too — on the endpoint it was a ratio of two
+        machine-noise numbers that passed for no reason. Ratios now measured at
+        16.6/16.3 (v=-80), 16.3/16.1 (v=0), 16.4/16.2 (v=+20).
+      - `state.t` is `step_index * dt`, never accumulated, and `dt` must divide
+        `t_max` exactly — 1000 additions of 0.01 drift enough to make `t >= t_max`
+        miss and overshoot a whole step, sampling the closed form at the wrong time.
+      - Clamping to `V = -40` / `V = -55` is a test in its own right: a clamp
+        protocol steps to round numbers, so those are the realistic way step 1's
+        `0/0` trap gets hit.
 - [ ] `models/hodgkin_huxley.py` — deterministic 4-D model on `core/ode.py`
       (`dt` is a **param**, not a `step` arg). Tests: resting fixed point
       (`rhs = 0`, no drift), RK4 order 4 on the real RHS.
 - [ ] Category-C report: rheobase, f-I curve, spike shape, refractory period, the
       subcritical-Hopf bistable band. **Labelled literature-anchored in its own
-      output; not in `analytic_predictions`.**
+      output; not in `analytic_predictions` — and never in an assertion whose bound
+      is a literature number.** "Rheobase in [6.2, 6.5]" would be asserting the
+      0.5-resolution of the planning scan (200 ms window, 100 ms transient dropped),
+      brittle to any change of horizon or spike-detection threshold. These belong in
+      the **demo's printed output**. If anything is asserted in the suite it is a
+      *structural* fact only: spike count is monotone non-decreasing in `I` over the
+      swept range, some `I` gives zero spikes and some gives more than zero.
 - [ ] `models/hh_stochastic.py` — 8-state Na + 5-state K **occupancy counts**,
       fixed-`dt` hybrid step (multinomial transitions, then RK4 on `V`),
       `DeterministicLimitModel`. `O(#states)` per step, independent of `N`.
       **Price the sweep before writing the test** (as the repressilator was).
-- [ ] `core/convergence.py` fixes — (1) align sample grid to the recording grid
-      exactly and assert it (step-hold interpolation is `N`-independent and would
-      floor `D(N)`); (2) stochastic-side floor check (halve stochastic `dt`, `D(N)`
-      must not move) folded into `reference_ok`; (3) use
-      `observable_keys=("V",)` so mV does not swamp the dimensionless gates.
+- [ ] Convergence-pathway fixes for HH — **(1) revised, and it needs no
+      `convergence.py` change at all.** The original plan was to add an
+      interpolation mode, because `_sample_on_grid` step-holds (right for SSA,
+      `N`-independent error for a fixed-`dt` trajectory, so it would floor `D(N)`
+      and flatten the slope). The cleaner route reuses what
+      `hh_voltage_clamp` already established: with `state.t = step_index * dt`
+      (**counted, never accumulated**) the recorded times are exact multiples of
+      `dt` by construction, so choosing `n_grid = n_steps/j + 1` for integer `j`
+      makes the comparison grid a *subset* of the recorded times and
+      `searchsorted` returns the exact recorded point — the interpolation becomes a
+      no-op. **Assert in the test that every grid time is a recorded time**, or the
+      day someone changes `n_grid` this silently degrades back to interpolation and
+      the symptom is a flattened slope, not an error.
+      (2) stochastic-side floor check (halve stochastic `dt`, `D(N)` must not move)
+      folded into `reference_ok`; (3) use `observable_keys=("V",)` so mV does not
+      swamp the dimensionless gates.
 - [ ] `D(N) ~ N^{-1/2}` convergence test in the **sub-rheobase subthreshold**
       regime, with teeth (broken `N` scaling) **verified across seeds 0-3**,
       asserting only the structurally-robust leg for each break.
@@ -109,16 +163,20 @@ targets — fill them in as each step lands.
       **bit-identical**, sha256-fingerprinted before and after.
 - [ ] Re-time `-n` (currently 6, floored by the 122 s repressilator check). The
       right `-n` is a function of the *runner-up* durations, not core count.
-      **Open observation from the step-1 run: 100 passed in 203.8 s, against the
-      129 s recorded at the end of Phase 1.** The 15 new rate tests cost 0.05 s, so
-      this is not their cost. `122 + 96 = 218 ~ 203` points at the known failure
-      mode — xdist's `--dist load` packing the repressilator slope check and the
-      squared-Omega tooth onto one worker — recurring because adding a file shifts
-      dispatch order, not because `-n 6` is wrong per se. Confirm with
-      `--durations=10` on the next full run before changing `-n`; if it is
-      scheduling luck rather than a regression, the durable fix is to make the two
-      multi-minute tests dispatch **first** (they are late in alphabetical
-      collection order), not to raise the worker count.
+      **Measured, after a scare that turned out to be nothing.** The step-1 run
+      reported 100 passed in **203.8 s** against the 129 s recorded at the end of
+      Phase 1, and the first instinct was to write down "xdist packed the two long
+      tests onto one worker" as the cause. That would have been a guess: the
+      `--durations=12` run settles it instead.
+      Measured at step 2 — **117 passed in 147.0 s**, with the long tests at
+      **117.1 s** (repressilator slope) and **94.3 s** (squared-Omega tooth), then
+      26.6 s, 21.4 s, 21.3 s. Those are their *nominal* durations, so the 203.8 s was
+      **not** a per-test regression and not contention inflating individual tests;
+      it was a one-off scheduling draw. The suite floors at 117 s and 147 s sits
+      30 s above it, so **`-n 6` stays** — no change on a single noisy measurement.
+      Re-check whenever a new multi-minute test lands; if packing does recur, the
+      durable fix is to make the two long tests **dispatch first** (they are late in
+      alphabetical collection order), not to raise the worker count.
 - [ ] `uv run pytest -q` green; `uv run ruff check .` clean; `ruff format .`.
 - [ ] Demos run and the figures were **looked at**, not just exit-code checked.
 - [ ] Update `CLAUDE.md` Status, memory, and this doc; commit and push.

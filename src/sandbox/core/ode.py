@@ -34,6 +34,31 @@ from collections.abc import Callable
 import numpy as np
 
 
+def rk4_step(
+    rhs: Callable[[np.ndarray], np.ndarray],
+    y: np.ndarray,
+    h: float,
+) -> np.ndarray:
+    """One classical RK4 increment of ``dy/dt = rhs(y)`` over a step ``h``.
+
+    Extracted from :func:`integrate_rk4` so that *protocol* models can reuse it.
+    A model's ``step(state, rng)`` advances exactly one increment (Phase 0), and
+    for the Phase-2 models that increment is a fixed numerical ``dt`` carried in
+    the params — Hodgkin-Huxley and Gray-Scott both need a single RK4 stage, not
+    a whole dense trajectory.
+
+    The arithmetic is byte-for-byte what ``integrate_rk4`` did inline, and its
+    output was sha256-fingerprinted across three RHS shapes before and after the
+    extraction, because every recorded slope anchor in the project depends on the
+    integrator not moving (non-negotiable #4).
+    """
+    k1 = rhs(y)
+    k2 = rhs(y + 0.5 * h * k1)
+    k3 = rhs(y + 0.5 * h * k2)
+    k4 = rhs(y + h * k3)
+    return y + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+
+
 def integrate_rk4(
     rhs: Callable[[np.ndarray], np.ndarray],
     y0: np.ndarray | list[float] | float,
@@ -88,11 +113,7 @@ def integrate_rk4(
         # The last step may be a hair shorter than dt so the trajectory ends
         # exactly at t_max; every other step is a full dt.
         h = t[i + 1] - t[i]
-        k1 = rhs(y)
-        k2 = rhs(y + 0.5 * h * k1)
-        k3 = rhs(y + 0.5 * h * k2)
-        k4 = rhs(y + h * k3)
-        y = y + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+        y = rk4_step(rhs, y, h)
         out[i + 1] = y
 
     return t, out
