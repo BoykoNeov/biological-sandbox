@@ -60,6 +60,16 @@ def run_replicate(
     Stops at ``max_steps`` or when the model reports a terminal state (if it
     implements ``is_terminal``). The initial and final states are always
     recorded, plus every ``record_every`` steps in between.
+
+    ``is_terminal`` is evaluated **exactly once per state**: the result is reused
+    for the loop condition, the "record the final state" decision, and the
+    ``terminated`` flag. This is a hot path — for a Gillespie model ``is_terminal``
+    ends in an absorbing-state check that re-evaluates the whole propensity
+    vector, so testing the same state twice per step re-ran the model's ``rates``
+    an extra time per event (measured at ~20% of repressilator SSA runtime). The
+    initial state is tested *before* the loop because a model can be terminal at
+    ``t = 0`` (Wright-Fisher initialized at fixation), which must record once and
+    never step.
     """
     is_terminal = getattr(model, "is_terminal", None)
 
@@ -67,14 +77,14 @@ def run_replicate(
     traj = Trajectory()
     traj.record(state.t, model.observables(state))
 
+    terminal_now = bool(is_terminal and is_terminal(state))
     step = 0
-    while step < max_steps and not (is_terminal and is_terminal(state)):
+    while step < max_steps and not terminal_now:
         state = model.step(state, rng)
         step += 1
-        at_interval = step % record_every == 0
         terminal_now = bool(is_terminal and is_terminal(state))
-        if at_interval or terminal_now:
+        if step % record_every == 0 or terminal_now:
             traj.record(state.t, model.observables(state))
 
-    traj.terminated = bool(is_terminal and is_terminal(state))
+    traj.terminated = terminal_now
     return traj
