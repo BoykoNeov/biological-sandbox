@@ -217,3 +217,58 @@ def plot_convergence(
     if title:
         ax.set_title(title)
     return ax
+
+
+FIELD_GID = "field"
+
+
+def plot_field(
+    field: np.ndarray,
+    *,
+    length: float = 1.0,
+    title: str | None = None,
+    cmap: str = "viridis",
+    colorbar: bool = True,
+    ax: Any = None,
+) -> Any:
+    """Render a 2-D scalar field on a periodic box as an image.
+
+    The companion to the ``FieldModel`` protocol extension, and like the other
+    helpers here it takes a **plain array** rather than a model or a state, so it
+    can be exercised on synthetic data without integrating a PDE.
+
+    Two choices that would otherwise be invisible in the picture:
+
+    * ``origin="lower"`` — array row 0 is ``x = 0``, so without this the field is
+      rendered upside down. For a symmetric Turing pattern that looks entirely
+      plausible, which is the same class of trap as plotting the wrong ODE column
+      in :func:`plot_replicates` (right shape, wrong thing).
+    * ``interpolation="nearest"`` — the grid cells *are* the model. Smoothing them
+      draws structure at scales the simulation never resolved, which for a figure
+      about *wavelength selection* would be actively misleading.
+
+    ``extent`` is set from ``length`` so the axes carry physical coordinates rather
+    than cell indices.
+    """
+    plt = _require_matplotlib()
+    data = np.asarray(field, dtype=float)
+    if data.ndim != 2:
+        raise ValueError(f"plot_field expects a 2-D field, got shape {data.shape}")
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5.5, 5))
+
+    image = ax.imshow(
+        data,
+        origin="lower",
+        extent=(0.0, length, 0.0, length),
+        cmap=cmap,
+        interpolation="nearest",
+    )
+    image.set_gid(FIELD_GID)
+    if colorbar:
+        ax.figure.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    if title:
+        ax.set_title(title)
+    return ax

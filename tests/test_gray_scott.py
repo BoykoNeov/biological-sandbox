@@ -427,3 +427,24 @@ def test_the_cfl_bound_is_the_one_the_stencil_dictates() -> None:
     _params(dt=limit / 2.0, t_max=limit * 5.0)  # just inside: accepted
     with pytest.raises(ValueError, match="CFL"):
         _params(dt=limit * 2.0, t_max=limit * 20.0)
+
+
+def test_fields_are_exposed_for_viz_without_reaching_into_the_state() -> None:
+    """``FieldModel`` is a *viz* extension, and nothing validated may depend on it.
+
+    The dispersion check runs entirely through the scalar ``a_q`` observable, which
+    is what lets the plan claim the validation track needed zero protocol change.
+    ``fields`` exists so a shared renderer can draw a 2-D field without touching
+    ``state.y`` — and it copies, because a renderer that normalised in place would
+    corrupt the trajectory it was drawing.
+    """
+    from sandbox.core.protocol import FieldModel
+
+    model = GrayScott()
+    assert isinstance(model, FieldModel)
+    state = model.initial_state(_params(), np.random.default_rng(0))
+    fields = model.fields(state)
+    assert set(fields) == {"u", "v"}
+    assert fields["u"].shape == (_N, _N)
+    fields["u"][:] = 0.0
+    assert model.fields(state)["u"].max() > 0.0, "fields() handed out a live view"

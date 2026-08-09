@@ -136,6 +136,29 @@ class DeterministicLimitModel(Model, Protocol):
         ...
 
 
+@runtime_checkable
+class FieldModel(Model, Protocol):
+    """A model whose state carries a spatial field — **for visualization only**.
+
+    Gray-Scott's state is two ``n x n`` arrays, and a shared plotting service must
+    be able to render them without reaching inside a concrete state (non-negotiable
+    #1). That is the entire justification for this extension, and it is worth being
+    explicit that **nothing validated depends on it**: the dispersion relation is
+    checked through a *scalar* observable (the amplitude of one Fourier mode), so
+    the validation track needed no protocol change at all. Adding ``fields`` for
+    the sake of a figure is defensible precisely because it is narrow; adding it
+    because "a PDE model obviously needs one" would not be.
+
+    Returning a dict rather than a bare array mirrors ``observables`` and keeps the
+    field names with the data, so a renderer can label its panels without knowing
+    what model produced them.
+    """
+
+    def fields(self, state: State) -> dict[str, np.ndarray]:
+        """Named 2-D spatial fields for rendering. Never consumed by a check."""
+        ...
+
+
 @dataclass(frozen=True)
 class Experiment:
     """A declarative, serializable specification of a run.

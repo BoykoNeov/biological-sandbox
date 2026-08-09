@@ -321,6 +321,16 @@ class GrayScott:
     def is_terminal(self, state: GrayScottState) -> bool:
         return state.step_index >= n_gs_steps(state.params)
 
+    def fields(self, state: GrayScottState) -> dict[str, np.ndarray]:
+        """The two concentration fields — the ``FieldModel`` extension, for viz only.
+
+        Copies rather than views, because the state is meant to be immutable and a
+        renderer that normalised in place would silently corrupt the trajectory.
+        No validation reads this: the dispersion check goes through the scalar
+        ``a_q`` observable instead.
+        """
+        return {"u": state.y[0].copy(), "v": state.y[1].copy()}
+
     def analytic_predictions(self, params: GrayScottParams) -> dict[str, float]:
         """The dispersion relation's growth rate — where it is a measurable one.
 

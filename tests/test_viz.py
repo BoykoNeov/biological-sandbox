@@ -41,9 +41,11 @@ import matplotlib.pyplot as plt  # noqa: E402  (must follow the backend selectio
 
 from sandbox.viz.backends.matplotlib_backend import (  # noqa: E402
     EXCLUDED_POINTS_GID,
+    FIELD_GID,
     FIT_GID,
     GUIDE_GID,
     plot_convergence,
+    plot_field,
     plot_replicates,
 )
 
@@ -263,3 +265,63 @@ def test_plot_convergence_rejects_unplottable_input(close_figures):
         plot_convergence(omegas, np.array([1.0, 0.0, 4.0]))
     with pytest.raises(ValueError, match="every point"):
         plot_convergence(omegas, _law(omegas), fit_mask=[False, False, False])
+
+
+# ---------------------------------------------------------------------------
+# plot_field -- the FieldModel companion
+# ---------------------------------------------------------------------------
+
+
+def _image_by_gid(ax, gid):
+    for image in ax.images:
+        if image.get_gid() == gid:
+            return image
+    raise AssertionError(f"no image with gid {gid!r}")
+
+
+def test_plot_field_renders_the_array_the_right_way_up(close_figures):
+    """Row 0 of the array is ``y = 0``, and the data reaches the image unchanged.
+
+    ``origin`` is the whole point: matplotlib's default puts row 0 at the *top*, so
+    a field drawn without ``origin="lower"`` is vertically mirrored. On a symmetric
+    Turing pattern that looks completely plausible -- the same class of error as
+    plotting the wrong ODE column in ``plot_replicates``. Asserted with a
+    deliberately asymmetric field so a flip cannot hide.
+    """
+    field = np.arange(12, dtype=float).reshape(3, 4)
+    ax = plot_field(field, length=2.0)
+    image = _image_by_gid(ax, FIELD_GID)
+
+    assert np.array_equal(np.asarray(image.get_array()), field)
+    assert image.origin == "lower"
+    assert tuple(image.get_extent()) == (0.0, 2.0, 0.0, 2.0)
+    # The smallest value sits at the bottom-left in data coordinates.
+    assert field[0, 0] == field.min()
+
+
+def test_plot_field_does_not_smooth_away_the_grid(close_figures):
+    """The cells are the model; interpolating draws structure that was never resolved.
+
+    For a figure whose subject is wavelength selection, invented sub-grid structure
+    is not a cosmetic issue.
+    """
+    ax = plot_field(np.eye(8))
+    assert _image_by_gid(ax, FIELD_GID).get_interpolation() == "nearest"
+
+
+def test_plot_field_copies_are_not_required_but_mutation_is_visible(close_figures):
+    """A renderer must not be handed a live view of model state.
+
+    ``GrayScott.fields`` copies for this reason; here we only check the helper does
+    not itself mutate what it is given.
+    """
+    field = np.ones((4, 4))
+    plot_field(field)
+    assert np.array_equal(field, np.ones((4, 4)))
+
+
+def test_plot_field_rejects_a_non_2d_field(close_figures):
+    with pytest.raises(ValueError, match="2-D"):
+        plot_field(np.zeros((2, 3, 4)))
+    with pytest.raises(ValueError, match="2-D"):
+        plot_field(np.zeros(5))
