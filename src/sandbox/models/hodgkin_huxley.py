@@ -179,21 +179,40 @@ def resting_state(params: HHParams, *, n_scan: int = 20_001, iterations: int = 2
     bracket to well below machine precision, and the whole thing costs
     microseconds.
 
-    Raises if the scan does not find exactly one root. Hodgkin-Huxley's famous
-    bistability is between a stable fixed point and a stable *limit cycle*, not
-    between two fixed points, so a second root here means the params are outside
-    the regime this helper was built for — better to say so than to silently pick
-    whichever root the bracket happened to contain.
+    Raises unless the scan finds exactly one root, and **says what it did find**.
+
+    At the standard 1952 conductances the root is provably unique for *any*
+    ``i_ext``: the steady-state I-V curve ``I_ss(V)`` is monotonically increasing
+    across the whole scanned window (measured, and asserted in
+    ``tests/test_hodgkin_huxley.py``), so ``i_ext - I_ss(V)`` crosses zero exactly
+    once. Hodgkin-Huxley's famous bistability is between a stable fixed point and
+    a stable *limit cycle*, not between two fixed points — which is why the guard
+    never fires at the defaults.
+
+    It is kept anyway because the conductances are params: turn ``g_na`` up and
+    ``I_ss`` can acquire the N-shape that gives **three** fixed points. If that
+    happens the honest report is not "your params are exotic" but "there are three
+    equilibria here and I am not going to pick one for you", so the message lists
+    the brackets it found. Two further limits worth knowing: a grid scan cannot see
+    a *tangency* (two roots merging without a sign change), nor a pair of roots
+    inside one cell — at 20k points neither is likely, but the guard is not proof
+    of uniqueness. The monotonicity test is.
     """
     lo_v, hi_v = params.e_k - 10.0, params.e_na + 10.0
     grid = np.linspace(lo_v, hi_v, n_scan)
     values = steady_state_current(grid, params)
     sign_changes = np.flatnonzero(np.sign(values[:-1]) != np.sign(values[1:]))
     if sign_changes.size != 1:
+        brackets = (
+            ", ".join(f"[{grid[i]:.4f}, {grid[i + 1]:.4f}]" for i in sign_changes[:6]) or "none"
+        )
         raise ValueError(
             f"expected exactly one resting potential in [{lo_v:g}, {hi_v:g}] for "
-            f"i_ext={params.i_ext:g}, found {sign_changes.size}; this helper assumes "
-            "the single-fixed-point regime"
+            f"i_ext={params.i_ext:g}, found {sign_changes.size} (brackets: {brackets}"
+            f"{', ...' if sign_changes.size > 6 else ''}). Three roots means the "
+            "steady-state I-V curve is N-shaped at these conductances and the system "
+            "has three equilibria; this helper will not pick one for you. Zero means "
+            "i_ext lies outside the range the membrane can balance."
         )
     lo, hi = float(grid[sign_changes[0]]), float(grid[sign_changes[0] + 1])
     f_lo = float(steady_state_current(lo, params))

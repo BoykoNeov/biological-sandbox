@@ -128,8 +128,24 @@ targets — fill them in as each step lands.
         non-decreasing in `I`, zero spikes at `I=0`, some at `I=20`, and a spike
         overshoots 0 mV then after-hyperpolarises. No literature number is a bound.
       - `resting_state` scans for sign changes and **raises unless there is exactly
-        one root** — HH's bistability is fixed-point-vs-limit-cycle, not two fixed
-        points, so a second root means the params left this helper's regime.
+        one root**, listing the brackets it found. But the scan is not what
+        *justifies* uniqueness — a grid cannot see a tangency or two roots inside one
+        cell. **Measured and asserted instead: `I_ss(V)` is monotonically increasing**
+        across the whole window at the 1952 conductances, so `i_ext - I_ss(V)` crosses
+        zero exactly once for *any* `i_ext` and the guard is unreachable at the
+        defaults. It is kept because the conductances are params: raise `g_na` and
+        `I_ss` can acquire the N-shape that gives three equilibria, and then the honest
+        report is "there are three and I will not pick one", not "your params are odd".
+      - The attraction test was **too slack by 44,780x** on first writing
+        (`residual <= still_decaying`). Sharpened with the decay law itself — for
+        `r(t) ~ A e^{-t/tau}`, `still_decaying` is dominated by `r(t_max/2)`, so
+        `r(t_max) ~ still_decaying * exp(-t_max/(2 tau))`, with `tau` from the
+        Jacobian rather than typed in. Measured: residual 5.8e-10, still_decaying
+        2.6e-5, predicted 3.1e-9 — the law is right to 5.3x. **840x tighter, 53x
+        margin.** Stated in the test: even sharpened it is a *convergence-happened*
+        check, and a deliberate 1e-8 nudge of the root still slips under it — the
+        precision is carried by the root-residual and no-drift tests (1e-11) and by
+        `validate()`, all three of which do catch that nudge.
       - **Profiling signal, recorded not acted on: 70.8 us per RK4 step** (~17.7 us
         per RHS evaluation), dominated by NumPy scalar overhead in the six rate
         functions. Irrelevant for the deterministic checks, but it sizes the

@@ -46,9 +46,11 @@ from sandbox.models.hodgkin_huxley import (
     MODEL,
     STATE_KEYS,
     HHParams,
+    fixed_point_eigenvalues,
     hh_rhs,
     n_hh_steps,
     resting_state,
+    steady_state_current,
 )
 
 
@@ -150,6 +152,19 @@ def test_resting_state_is_a_root_of_the_rhs(i_ext):
     assert np.allclose(y_star[1:], steady_state(y_star[0]), rtol=0, atol=1e-12)
 
 
+def test_steady_state_iv_curve_is_monotone_so_the_root_is_unique():
+    # This is what actually justifies resting_state's single-root assumption --
+    # the sign-change scan does not, since a grid cannot see a tangency or two
+    # roots sharing a cell. I_ss(V) monotonically increasing means i_ext - I_ss(V)
+    # crosses zero exactly once for ANY i_ext, so the guard is unreachable at these
+    # conductances. It is kept because g_na and friends are params: raise g_na and
+    # I_ss can acquire the N-shape that yields three equilibria.
+    p = HHParams(i_ext=0.0)
+    v = np.linspace(p.e_k - 10.0, p.e_na + 10.0, 200_001)
+    i_ss = -steady_state_current(v, p)  # i_ext = 0, so this is I_ss(V) itself
+    assert np.all(np.diff(i_ss) > 0.0), "steady-state I-V is not monotone; roots may not be unique"
+
+
 def test_resting_potential_is_near_the_published_minus_65():
     # LITERATURE-ANCHORED (category C), used only as a COARSE bound. This is what
     # would catch a wrong conductance or reversal potential -- neither the
@@ -207,8 +222,28 @@ def test_the_fixed_point_attracts_from_a_displaced_start():
     _, y_half = run_hh(half)
     still_decaying = float(np.abs(y_full[-1] - y_half[-1]).max())
     residual = float(np.abs(y_full[-1] - v_star).max())
-    assert residual <= still_decaying, (
-        f"residual {residual:.3e} exceeds the measured leftover transient {still_decaying:.3e}"
+
+    # A plain `residual <= still_decaying` passes by 44,780x here. True, but so
+    # slack it would not notice a badly wrong answer, and it would claim a
+    # tightness it does not have. Sharpen it with the decay law itself: for
+    # r(t) ~ A e^{-t/tau}, `still_decaying` is dominated by r(t_max/2), so
+    #     r(t_max) ~ still_decaying * exp(-t_max / (2 tau)).
+    # tau comes from the Jacobian at the fixed point, not from a typed constant.
+    # Measured: residual 5.8e-10, still_decaying 2.6e-5, predicted 3.1e-9 -- the
+    # decay law is right to 5.3x, so a factor of 10 is headroom, not a fudge.
+    #
+    # What this test is FOR, stated so it is not over-trusted: even sharpened, the
+    # bound is ~3.1e-8 (840x tighter than the 2.6e-5 it replaced, with 53x margin
+    # on the measured residual), and a deliberate 1e-8 nudge of the root still
+    # slips under it. That is the right division of labour, not a gap -- this is a
+    # "convergence actually happened" check. PRECISION lives in the tests that
+    # bound the root residual and the no-drift run at 1e-11, and in validate()'s
+    # Richardson sem_floor; all three do catch that 1e-8 nudge.
+    tau_slow = 1.0 / float(np.abs(fixed_point_eigenvalues(HHParams(i_ext=0.0)).real).min())
+    predicted = still_decaying * float(np.exp(-full.t_max / (2.0 * tau_slow)))
+    assert residual <= 10.0 * predicted, (
+        f"residual {residual:.3e} exceeds 10x the decay-law prediction {predicted:.3e} "
+        f"(still_decaying {still_decaying:.3e}, tau {tau_slow:.3f} ms)"
     )
     assert residual < 1e-6, "not converged enough for the claim to mean anything"
 
