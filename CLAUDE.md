@@ -66,73 +66,102 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 ## Status
 
 Phase 0 (Wright-Fisher) complete and validated. **Phase 1 complete**: RK4
-integrator + `DeterministicLimitModel` protocol (step 1), Gillespie SSA engine
-(step 2), `birth_death` — the engine's exact-closed-form check (step 3:
-stationary mean `k/gamma` via `validate()` + Fano-factor `Var/<n>=1` in counts),
-and `isomerization` — the second exact check (step 4: `A<->B`, conserved total,
-stationary mean `(k2/(k1+k2))*c_tot` via `validate()`), and `core/convergence.py`
-— the second validation track (step 5: `convergence_report()` checks the log-log
-slope of `D(Omega)` is consistent with `-1/2` and significantly negative, with a
-statistical `max(bootstrap, OLS)` slope SE; validated on `birth_death`, teeth via a
-pure per-replicate-vs-mean-first unit test + a `D*sqrt(Omega)` magnitude anchor) —
-and `repressilator` — the headline (step 6: 6-species Elowitz-Leibler Hill network,
-**no** `analytic_predictions`, validated by `convergence_report` at slope
-`-0.4606 +/- 0.0734`, with broken-Omega-scaling teeth failing at `-0.1363` and
-`-0.9904`, each verified across seeds 0-3), `viz` (step 7: `plot_convergence`
-log-log helper — plain arrays, drawn-but-excluded knee, fit and guide both anchored
-at the fitted centroid — plus a *tested* `plot_replicates` ODE overlay, which needed
-no rewrite since both sides are concentrations), and `demos/repressilator.py`
-(step 8: engine-vs-closed-forms, the overlay figure, the scaling figure; about a
-minute on a deliberately reduced, seed-checked config that says so in its own
-output).
+integrator + `DeterministicLimitModel` protocol, Gillespie SSA engine,
+`birth_death` and `isomerization` (the two exact closed-form checks),
+`core/convergence.py` (the second validation track: log-log slope of `D(Omega)`
+against `-1/2` with a statistical `max(bootstrap, OLS)` SE), `repressilator` (the
+headline — no `analytic_predictions`, validated by `convergence_report` at slope
+`-0.4606 +/- 0.0734` with two broken-`Omega` teeth), `viz`, and
+`demos/repressilator.py`.
 
-Lessons worth carrying forward: assert a broken-model tooth only on the leg that is
-*structurally* robust for that break (for a flat-slope break, `slope/SE` is
-replicate-independent, so more replicates never de-flake it); `beta=1`, **not** the
-textbook `beta=5`, is what actually oscillates (beta=5 damps to the fixed point);
-`fit_mask` must exclude the low-`Omega` **phase-saturation knee** (`Omega <= 1`
-here), spotted as `D*sqrt(Omega)` falling below the plateau; a **figure carries a
-claim and gets a test like anything else** — the overlay's live trap is the ODE
-*column index* (a permuted protein is the right shape at the wrong phase), and both
-viz helpers were mutation-checked; and pin the *worst* seed of the ones you checked,
-not a representative one.
+**Phase 2 complete** — Hodgkin-Huxley (2a) and Gray-Scott (2b). See
+`docs/plans/phase2-{plan,context,tasks}.md`; the tasks doc carries every measured
+number. Suite **310 passed in 130 s at `-n 6`**.
 
-**Phase 2 in progress** — Hodgkin-Huxley (2a) then Gray-Scott (2b); see
-`docs/plans/phase2-{plan,context,tasks}.md`. Two decisions shape it. First, the
-plan names **three categories of checkable claim** — *A* exact analytic
-(`analytic_predictions`), *B* asymptotic law (log-log slope + CI), *C*
-literature-anchored (rheobase, f-I, spike shape) — and **category C never enters
-`analytic_predictions` nor an assertion's bound**; it is reported in demos, and
-only *structural* facts about it are asserted. Second, HANDOFF's "validate
-Gray-Scott's pattern wavelength against LSA" was **reframed after measurement**:
-at Pearson's famous `(F, k)` there is no real non-trivial homogeneous steady
-state, so those patterns are not Turing patterns and LSA makes no claim about
-them. Phase 2 validates **`lambda(q)` itself** (sharper, works anywhere, spans a
-sign change) and labels the emergent pattern qualitative.
+Two decisions shaped the phase. First, **three categories of checkable claim** —
+*A* exact analytic (`analytic_predictions`), *B* asymptotic law (log-log slope +
+CI), *C* literature-anchored (rheobase, f-I, spike shape) — and **category C never
+enters `analytic_predictions` nor an assertion's bound**; it is reported in demos,
+and only *structural* facts about it are asserted. Second, HANDOFF's "validate
+Gray-Scott's pattern wavelength against LSA" was **reframed after measurement**: at
+Pearson's famous `(F, k)` there is no real non-trivial homogeneous steady state, so
+those patterns are not Turing patterns and LSA makes no claim about them. Phase 2
+validates **`lambda(q)` itself** and labels the emergent pattern qualitative.
 
-Done so far: `hh_rates` (step 1 — the six rate functions, with `_linoid` for the
-removable `0/0` at exactly `V=-40`/`V=-55`, via `expm1`), `hh_voltage_clamp`
-(step 2 — the category-A lead anchor: clamped gating decouples into an exact
-`x_inf + (x0-x_inf)e^{-t/tau}`; also extracted a bit-identical `rk4_step`), and
-`hodgkin_huxley` (step 3 — deterministic 4-D model; `analytic_predictions` is the
-root-found fixed point and **raises** past the subcritical Hopf rather than
-returning a wrong-but-green number; explicit RK4 suffices at `tau_m_min = 0.0622
-ms`, so **no scipy**). Suite 139 passed in ~136 s.
+**2a — Hodgkin-Huxley.** `hh_rates` (six rate functions, `_linoid` for the removable
+`0/0` at `V=-40`/`-55` via `expm1`), `hh_voltage_clamp` (the category-A lead anchor:
+clamped gating decouples into an exact `x_inf + (x0-x_inf)e^{-t/tau}`),
+`hodgkin_huxley` (deterministic 4-D; `analytic_predictions` is the root-found fixed
+point and **raises** past the subcritical Hopf), `hh_stochastic` (8-state Na +
+5-state K **occupancy counts**, `O(#states)` per step and independent of `N`, with
+an **exact factorized propagator** `P = kron(P_m, P_h)` verified against a
+hand-transcribed generator + local `expm` at 7.4e-15), and the headline
+**`D(N) ~ N^{-1/2}`** at slope `-0.5092 +/- 0.0106` (seeds 0-3: `-0.5092, -0.4933,
+-0.4988, -0.5101`), with two teeth. `demos/hodgkin_huxley.py` reports category C.
 
-Lessons from Phase 2 so far: **self-consistency is not independence** — HH's
-root-find-vs-integrate agreement cannot catch a wrong `g_Na` or `m^2`-for-`m^3`,
-so the independent anchor is a *separately hand-transcribed* `textbook_rhs` in
-the test file; **mutate deterministic tests too, and check where the probes
-land** — one cancellation test passed its mutant because a float round-trip
-flipped which side of a guard threshold the probes hit, and two clamp tests
-measured the endpoint, which after full relaxation is machine noise regardless of
-`dt`; and **match the tolerance to the claim** — Richardson cannot see leftover
-transient, so stationarity and attraction need separate tests.
+**2b — Gray-Scott.** `core/laplacian.py` (periodic 5-point stencil; a Fourier mode is
+an **exact** eigenfunction, pinning stencil + wrap + integrator at once; order-2
+consistency slope `1.99835`), `gray_scott` (`analytic_predictions` = the growth rate
+from the **discrete** operator), `lambda(q)` validated at 8 probes **across a sign
+change**, the `FieldModel` viz-only extension, and `demos/gray_scott.py`.
 
-Next: `hh_stochastic` (8-state Na + 5-state K *occupancy counts*, `O(#states)`
-per step and independent of `N`, with an **exact** factorized channel propagator
-— verified against a brute-force matrix exponential to 6.7e-16 — because a
-`rate*dt` scheme's `O(dt)` bias is `N`-independent and would floor `D(N)`), then
-the `D(N) ~ N^{-1/2}` check in a **sub-rheobase subthreshold** regime, since in
-the spiking regime low `N` changes the spike *count*, which obeys no `-1/2` law.
-See `docs/plans/` and HANDOFF.md §5.
+## Lessons worth carrying forward
+
+**On tolerances.** Match the tolerance to the *claim*, and derive it rather than
+typing it. Richardson in `dt` sees discretization error and nothing else — it cannot
+see leftover transient (HH attraction) and it cannot see a *linearization* error
+(Gray-Scott), where the right instrument is **Richardson in the amplitude**:
+`(4/3)|m(a) - m(a/2)|` predicted the true error to a ratio of **1.000** at all eight
+probes. For a deterministic model `validate()`'s statistical SE degenerates to zero,
+so supply a numerical `sem_floor` and use two replicates (one gives `sem = inf` and
+passes vacuously).
+
+**On tests that are green for the wrong reason.** This phase produced five, and they
+are the most valuable thing in it:
+
+- `assert std > 0.0` passed a *rounded* initial condition, because `np.std` of sixty
+  bit-identical values returns `2.7e-20`, not `0.0`. **A threshold nothing can fail
+  is not a check.**
+- A conservation test ran at exactly `N = 5000`, where `round(N p)` happens to sum to
+  `5000` for both populations. At `N = 10000` it sums to `10001`. **Sweep the
+  constant that the probe happens to land on.**
+- A mutant that **never moved a single channel** (multinomial aggregated along the
+  wrong axis) passed everything, because at a fixed point a frozen membrane sits
+  still exactly like a correct one. Caught only by a *transient* regime and a **ratio
+  between two system sizes** — an `N`-independent error has no tolerance that
+  distinguishes "small" from "not shrinking".
+- Asserting `linspace` grids misalign **failed**: at stride 8 they align perfectly,
+  because dividing by a power of two is exact. 373 other configurations misalign. The
+  hazard is not "it is wrong" but "it is right until someone changes `n_grid`".
+- The order-2 slope read `1.9737` and the shortfall was *real*, not noise: `k h / 2`
+  was `0.785` at the coarsest grid. **An asymptotic order is only measurable inside
+  the asymptotic regime**, and which grids are inside it is part of the claim.
+
+**On teeth.** Verify at 3-4 seeds and assert only the leg that is *structurally*
+robust for that break. A tooth must also bite the right thing: the repressilator's
+`Omega^2` tooth could not be reused for HH, because squaring `N` drives `D` an order
+of magnitude below the splitting bias and the broken model would fail through a
+*discretization floor* rather than through its scaling.
+
+**On performance, both directions.** Profile before optimizing — and record the
+measurement when it says "do nothing". Twice here the *obvious* optimization was
+backwards: a "vectorized" NumPy propagator build cost **80.5 us/step against the
+72 us naive loop it replaced** (on a 4x4 there is no arithmetic to amortize, only
+per-call overhead), and `np.kron` cost 5.5x a broadcast-and-reshape. Batching 13
+multinomial draws into 2 was a **wash** (13.30 vs 13.46 us). Equally, the Phase-1
+close-out's proposed `-n` fix — dispatch the long tests first — measured **75%
+worse** (228 s vs 130 s) and was reverted.
+
+**On figures.** A figure carries a claim and gets looked at, not exit-code checked.
+Four claims were wrong until someone looked: an f-I curve that put rheobase at
+`[2, 4]` by counting onset spikes; channel noise demonstrated at `I = 20`, where the
+drive swamps it; a dispersion curve drawn solid through the region where the
+eigenvalue pair is *complex*; and a Turing panel implying its stripes were a
+*selected* wavelength when the mode had been seeded by hand.
+
+**On refusing to answer.** `analytic_predictions` raises rather than returning a
+wrong number that still looks green — past the subcritical Hopf, where no real
+non-trivial homogeneous state exists, on a complex eigenvalue pair, and on a growth
+rate too near zero to measure (`j=13` needs `t_max = 18822` and returns `nan`).
+
+Next: Phase 3. See HANDOFF.md.

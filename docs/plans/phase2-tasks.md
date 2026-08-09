@@ -152,109 +152,164 @@ targets — fill them in as each step lands.
         stochastic sweep: at `t_max = 40 ms` (subthreshold `tau ~ 8 ms`) a replicate
         is 4000 steps ~ 0.28 s, so `R=20 x K=5` is ~28 s — affordable. A 200 ms
         horizon would have been ~140 s and a suite floor on its own.
-- [ ] Category-C report: rheobase, f-I curve, spike shape, refractory period, the
-      subcritical-Hopf bistable band. **Labelled literature-anchored in its own
-      output; not in `analytic_predictions` — and never in an assertion whose bound
-      is a literature number.** "Rheobase in [6.2, 6.5]" would be asserting the
-      0.5-resolution of the planning scan (200 ms window, 100 ms transient dropped),
-      brittle to any change of horizon or spike-detection threshold. These belong in
-      the **demo's printed output**. If anything is asserted in the suite it is a
-      *structural* fact only: spike count is monotone non-decreasing in `I` over the
-      swept range, some `I` gives zero spikes and some gives more than zero.
-- [ ] `models/hh_stochastic.py` — 8-state Na + 5-state K **occupancy counts**,
-      fixed-`dt` hybrid step, `DeterministicLimitModel`. `O(#states)` per step,
-      independent of `N`. **Price the sweep before writing the test.**
-      **Design de-risked ahead of implementation (probe in `temp/phase2-slice/`):**
-      - Use the **exact** channel propagator, not `rate * dt` transition
-        probabilities. With `V` frozen over a step the 8-state Na chain *factorizes*
-        (three independent `m` subunits x one `h`), so `P = kron(P_m, P_h)` where
-        each factor is a binomial convolution of the closed-form 2-state propagator
-        `p_CO = x_inf(1 - e^{-dt/tau})`, `p_OO = x_inf + (1 - x_inf)e^{-dt/tau}`.
-        **Verified against a brute-force scaling-and-squaring matrix exponential of
-        the generator: max deviation 6.7e-16 across `V in {-90,-65,-40,0,40}`, all
-        three gates, `dt in {0.01, 0.001}`.** That removes the channel-kinetics
-        discretization error *entirely*, leaving only the `V`-splitting error — which
-        matters, because a `rate*dt` scheme's `O(dt)` bias is **`N`-independent** and
-        would floor `D(N)` and flatten the slope. Keep the `expm` comparison as the
-        test's independent reference.
-      - `P` rows sum to 1 to 2.2e-16; update by one `multinomial(n_s, P[s])` per
-        occupied state (13 draws/step total).
-      - **Measured naive cost: 72 us/step for the Na update alone**, dominated by
-        rebuilding the propagator in a Python triple loop with `math.comb` — plus
-        ~70 us/step for the `V` RK4. That is ~0.7 s per 4000-step replicate and
-        ~72 s for an `R=20 x K=5` sweep, i.e. a suite floor on its own. Vectorize the
-        propagator build (the binomial coefficients are constants; the matrices are
-        4x4 and 5x5) **before** writing the sweep, and re-measure. This is the
-        profiling-driven optimization Phase 2 was meant to surface, and the likely
-        answer is plain NumPy, not numba.
-- [ ] Convergence-pathway fixes for HH — **(1) revised, and it needs no
-      `convergence.py` change at all.** The original plan was to add an
-      interpolation mode, because `_sample_on_grid` step-holds (right for SSA,
-      `N`-independent error for a fixed-`dt` trajectory, so it would floor `D(N)`
-      and flatten the slope). The cleaner route reuses what
-      `hh_voltage_clamp` already established: with `state.t = step_index * dt`
-      (**counted, never accumulated**) the recorded times are exact multiples of
-      `dt` by construction, so choosing `n_grid = n_steps/j + 1` for integer `j`
-      makes the comparison grid a *subset* of the recorded times and
-      `searchsorted` returns the exact recorded point — the interpolation becomes a
-      no-op. **Assert in the test that every grid time is a recorded time**, or the
-      day someone changes `n_grid` this silently degrades back to interpolation and
-      the symptom is a flattened slope, not an error.
-      (2) stochastic-side floor check (halve stochastic `dt`, `D(N)` must not move)
-      folded into `reference_ok`; (3) use `observable_keys=("V",)` so mV does not
-      swamp the dimensionless gates.
-- [ ] `D(N) ~ N^{-1/2}` convergence test in the **sub-rheobase subthreshold**
-      regime, with teeth (broken `N` scaling) **verified across seeds 0-3**,
-      asserting only the structurally-robust leg for each break.
-- [ ] Viz + `demos/hodgkin_huxley.py` — deterministic spike train, the f-I curve
-      (labelled C), channel-noise replicates vs the ODE, the `N`-scaling figure.
-      Spiking-regime channel noise belongs **here**, not in the slope test.
+- [x] `models/hh_stochastic.py` — 8-state Na + 5-state K occupancy counts, exact
+      factorized propagator, fixed-`dt` hybrid step, `DeterministicLimitModel`.
+      **Priced before writing** (`temp/phase2-work/`), and four of the plan's
+      expectations turned out wrong:
+      - **The splitting bias — the one thing that could floor `D(N)` — is exactly
+        `0` at the resting fixed point.** Both maps share it: gates at `x_inf(V*)`
+        do not move, and `V_inf` at the fixed-point conductances *is* `V*`. On a
+        1.5 mV sub-rheobase transient it is `1.0e-3 mV` at `dt = 0.025`.
+      - Advancing `V` at the **post**-transition conductance beats a pre/post
+        midpoint by 100x (1.7e-4 vs 1.9e-2 mV). The "more accurate" midpoint rule
+        is *worse* here, because using the newer gate value compensates for having
+        frozen `V` at the older one. Not built.
+      - Batching the 13 multinomial draws into 2 broadcast calls: **13.30 us vs
+        13.46 us — a wash.** The assumption was wrong; the measurement was cheap.
+      - The propagator build dominated instead, and the "vectorized" NumPy version
+        cost **80.5 us/step against the 72 us naive loop it was meant to replace**:
+        on a 4x4 there is no arithmetic to amortize, only per-call overhead. Plain
+        float construction is 24.2 us; `np.kron` is 16.9 us against 3.1 us for
+        broadcast-and-reshape.
+      Nine mutants killed, three only after tests that were green for the wrong
+      reason were rebuilt — see the lessons below.
+- [x] Category-C report: rheobase, f-I curve, spike shape, refractory period, the
+      subcritical-Hopf bistable band. **In `demos/hodgkin_huxley.py`'s printed
+      output, asserted nowhere.** Measured: rheobase brackets to `[6, 6.5]`, f-I
+      reaches 100 Hz at `I = 30`, spike peak `+41.30 mV` and after-hyperpolarisation
+      `-74.04 mV` (published squid axon ~+40 / ~-75), half-width `0.72 ms`, ISI
+      `12.06 ms`, and the fixed point is still **stable** at `I = 6.5, 7, 8` while
+      the cell fires, unstable by `I = 10`.
+      - **The first version put rheobase at `[2, 4]`** — it counted spikes over the
+        whole window, and a sub-rheobase step still fires an *onset* spike before
+        falling silent. Counted over `t in [50, 100] ms` it lands on the textbook
+        value. The "incl. onset" column stays in the table so the artifact is
+        visible rather than merely corrected.
+- [x] Convergence-pathway fixes — **two were needed, not one.** `compare_keys` is
+      not optional: the existing one-to-one length guard *rejects*
+      `observable_keys=("V",)` against a 4-component ODE outright, so the plan's
+      "just pass it" could not work as written. Grid alignment landed as an explicit
+      `grid` argument plus `require_exact_grid`, verified per replicate.
+      - **The test for it was wrong first, instructively.** It asserted that a
+        `linspace` grid misaligns, and failed: at `n_steps=1600, stride=8` it aligns
+        perfectly, because `linspace` computes `i * (t_max/(n_grid-1))`, which equals
+        `(i*stride)*dt` exactly when the division is by a **power of two**. Stride 3
+        puts 25 of 41 grid times off, and 373 of the swept configurations misalign.
+        The hazard is not that `linspace` is wrong but that it is right until someone
+        changes `n_grid` from 201 to 121.
+      - The stochastic-side floor check went in as `stochastic_dt_key`, passing on
+        either a small relative shift **or** statistical indistinguishability at `z`
+        combined SEs — the two runs use independent streams, so demanding a small
+        *absolute* shift would turn replicate noise into a failure.
+- [x] `D(N) ~ N^{-1/2}` in the sub-rheobase subthreshold regime. Slope across seeds
+      0-3 at `R=16, z=3`: **-0.5092, -0.4933, -0.4988, -0.5101** (SE 0.0106-0.0140).
+      Seed 0 is pinned because it is the *worst* of the four.
+      - **The threshold trap is real and was measured, not reasoned about:** at
+        `N = 1000` and `4000` the membrane fires spontaneously (max `|V-V*|` of 108
+        and 103 mV) and `D*sqrt(N)` leaps from its ~71 plateau to 266 and 109,
+        dragging an all-points slope to `-0.734`. The sweep starts at 16000.
+      - The high end is **free**: a step is `O(#states)` and `N`-independent (0.203 s
+        per replicate at 1.6e4 and at 4.1e6 alike), so 256x of lever arm costs
+        nothing. That is where the slope precision comes from.
+      - Teeth, each asserted only on its structurally-robust leg: `N` pinned gives
+        slope `+0.011/-0.019/+0.037/+0.021`, `significant=False`; `N -> 200 sqrt(N)`
+        gives `-0.2544/-0.2476/-0.2637/-0.2364`, `consistent=False` but
+        `significant=True`. **The repressilator's `Omega^2` tooth could not be
+        reused**: squaring `N` drives `D` to ~1.7e-5 mV, an order of magnitude below
+        the 1.0e-3 mV splitting bias, so the broken model would fail through a
+        discretization floor rather than through its scaling.
+- [x] Viz + `demos/hodgkin_huxley.py` — four acts kept apart by category, four
+      figures written **and looked at**. Channel noise is shown at `I = 5`
+      (sub-rheobase), not `I = 20`: deep in the firing regime even `N = 2000` gives
+      `[5,5,4,5]` against the limit's 5, because the drive swamps the noise. At
+      threshold the limit fires 1 onset spike while `N = 1000` fires `[4,3,5]`.
 
 ## 2b — Gray-Scott
 
-- [ ] `core/laplacian.py` — periodic 5-point stencil. **Test first with the exact
-      Fourier eigenvalue** `lambda_h = -(4D/h^2)(sin^2(k_x h/2) + sin^2(k_y h/2))`:
-      a single mode is an exact eigenfunction, so this validates stencil + periodic
-      BCs + integrator at once (the `birth_death` of 2b).
-- [ ] Order-2 consistency slope: `|lambda_h - (-D|k|^2)|` vs `h` has log-log slope
-      `-2`. Category B, negligible cost.
-- [ ] `models/gray_scott.py` — PDE model, **scalar** observables (mode amplitude
-      `|u_hat(q)|`, means) so the existing Recorder needs no change. CFL
-      `dt < h^2/(4 D_max)` validated in `__post_init__`.
-- [ ] `lambda(q)` validation at `(F,k) = (0.074, 0.062)` across the **sign change**
-      (`q = 10, 20, 30, 43.828, 60, 80, 120`), plus the `eps -> 0` amplitude sweep
-      that makes the linearization claim honest.
-- [ ] `FieldModel.field(state)` protocol extension — **viz only**, justified on
-      exactly those grounds; no validation depends on it.
-- [ ] `demos/gray_scott.py` — the validated Turing point **and** the Pearson
-      pattern, the latter explicitly labelled qualitative/exploratory with the
-      reason (no real non-trivial homogeneous state there).
+- [x] `core/laplacian.py` — periodic 5-point stencil, dimension-agnostic via
+      `np.roll` so periodicity is structural rather than an edge case. Exact
+      Fourier-eigenvalue test first; nine mutants killed.
+      - **Two of its tests asserted a limit outside its regime.** The order-2 slope
+        read **1.9737** over `n = 16..256`, and the shortfall was real: the expansion
+        is in `k h / 2`, which is `0.785` at `n=16, j=4`. On `n = 64..1024` it is
+        **1.99835**, coarsest point within 0.5% of `D k^4 h^2/12`.
+      - "A constant field has exactly zero Laplacian" is **false**: four additions
+        then a divide by `h^2` leave `1.08 eps |c| / h^2`, and that ratio is identical
+        at `n=32` and `n=128` — which is what identifies it as cancellation rather
+        than a stencil error.
+      - The decay test ran for 9 e-folds at first, so "the error is small" would have
+        described a field that had already vanished. It is 3 now.
+- [x] Order-2 consistency slope: **1.99835** (category B, negligible cost).
+- [x] `models/gray_scott.py` — PDE model, scalar observables, CFL validated in
+      `__post_init__` against `cfl_limit` (the **forward-Euler** bound, though the
+      model steps with RK4: a margin borrowed from the integrator's stability polygon
+      vanishes the day the integrator changes).
+- [x] `lambda(q)` validation across the **sign change** at `(F,k) = (0.074, 0.062)`:
+      `j in {3,5,7,10,12}` grow, `{14,16,20}` decay. 12 mutants killed.
+      - **The reference is the DISCRETE eigenvalue, and that is not a refinement.**
+        At `n=64` the stencil and the continuum differ by **408% at `j=12`** and
+        **disagree about the sign at `j=13`**. No tolerance covers an opposite sign.
+        Asserted directly against a continuum formula written out in the test.
+      - **The tolerance is Richardson in the AMPLITUDE, not in `dt`.** The error is
+        `O(a^2)` — a linearization artifact, not a discretization one — so `dt` and
+        `dt/2` carry the same term and Richardson in `dt` would report a reassuringly
+        tiny number about the wrong thing. Measured, `(4/3)|m(a)-m(a/2)|` predicts the
+        true error to a ratio of **1.000** at all eight probes, and the extrapolant
+        lands on `lambda` to 1e-11..1e-14.
+      - **Every probe ends at the same amplitude rather than starting there.** The
+        error is set by the *final* amplitude, so seeding all probes at one `eps` gave
+        `j=3` a relative error of 7.5e-3 against `j=7`'s 1.5e-5 — a 500x spread no
+        single tolerance could describe honestly. Equalizing the endpoint brings the
+        worst case to 1.4e-4.
+      - The `eps -> 0` slope measured **1.9978** against the predicted 2 —
+        corroborating, now that amplitude-Richardson carries the tolerance.
+      - Three refusals, each because the alternative is a wrong number that looks
+        green: no real non-trivial state, a complex pair (`j=1,2`), and a rate too
+        near zero to measure. The last is not fastidiousness: `j=13` sits at
+        `lambda = 1.06e-4`, needs `t_max = 18822` for two e-folds, and returns `nan`.
+- [x] `FieldModel` protocol extension — **viz only**, and nothing validated depends
+      on it: the dispersion check runs through the scalar `a_q`. Landed as
+      `fields(state) -> dict[str, ndarray]`, mirroring `observables`.
+- [x] `demos/gray_scott.py` — the validated Turing point **and** the Pearson pattern,
+      the latter printing the `homogeneous_state` raise verbatim so the reframing
+      appears as an error message rather than as prose.
+      - **Two figures were wrong until they were looked at.** The dispersion plot drew
+        the low-`q` region as part of the solid prediction curve, where the pair is
+        *complex* and the plotted value is `tr/2` — a decay envelope, not a measurable
+        rate, and the visible kink read as physics. And the Turing panel was titled "a
+        Turing pattern", implying its 7 stripes were a *selected* wavelength; they are
+        the **seeded** mode saturating. It now says so, and reports that `j=7` is
+        separately computed to be the fastest-growing mode.
 
 ## Both — close-out
 
-- [ ] Profile. Optimize only what profiling names; **record the measurement
-      whether or not it leads to a dependency** — if NumPy suffices for Gray-Scott
-      at `128^2`-`256^2`, write that and add nothing. Any optimization must be
-      **bit-identical**, sha256-fingerprinted before and after.
-- [ ] Re-time `-n` (currently 6, floored by the 122 s repressilator check). The
-      right `-n` is a function of the *runner-up* durations, not core count.
-      **Measured, after a scare that turned out to be nothing.** The step-1 run
-      reported 100 passed in **203.8 s** against the 129 s recorded at the end of
-      Phase 1, and the first instinct was to write down "xdist packed the two long
-      tests onto one worker" as the cause. That would have been a guess: the
-      `--durations=12` run settles it instead.
-      Measured at step 2 — **117 passed in 147.0 s**, with the long tests at
-      **117.1 s** (repressilator slope) and **94.3 s** (squared-Omega tooth), then
-      26.6 s, 21.4 s, 21.3 s. Those are their *nominal* durations, so the 203.8 s was
-      **not** a per-test regression and not contention inflating individual tests;
-      it was a one-off scheduling draw. The suite floors at 117 s and 147 s sits
-      30 s above it, so **`-n 6` stays** — no change on a single noisy measurement.
-      Re-check whenever a new multi-minute test lands; if packing does recur, the
-      durable fix is to make the two long tests **dispatch first** (they are late in
-      alphabetical collection order), not to raise the worker count.
-- [ ] `uv run pytest -q` green; `uv run ruff check .` clean; `ruff format .`.
-- [ ] Demos run and the figures were **looked at**, not just exit-code checked.
-- [ ] Update `CLAUDE.md` Status, memory, and this doc; commit and push.
+- [x] Profile. **No dependency added, and the measurement is why.** The HH slope
+      test costs ~25 s against a 111 s suite floor, so nothing about the stochastic
+      step needs optimizing; Gray-Scott at `64^2`-`128^2` is vectorized NumPy whose
+      python-level loop runs once per time step, not per cell. Where measurement
+      *did* change code it went the opposite way to the plan's expectation: the
+      hand-written scalar propagator build beat the "vectorized" one 3.3x, and
+      broadcast-and-reshape beat `np.kron` 5.5x. numba and JAX stay out.
+- [x] Re-time `-n`. **Measured — and the Phase-1 close-out's proposed fix was tried
+      and rejected on measurement.** Suite: **310 passed in 129.7 / 130.0 / 130.8 s**
+      at `-n 6` — reproducible, floored by the single 110.9 s repressilator test.
+      (The 174.5 s reading seen mid-phase was a scheduling draw, not a regression;
+      `--durations` showed every test at its normal cost.)
+      The Phase-1 doc proposed making the two long tests **dispatch first**. It was
+      implemented as a `pytest_collection_modifyitems` hook and measured at
+      **228.7 s and 227.1 s — 75% worse**, consistently, and very close to
+      `110.9 + 91.2 = 202 s` of long tests sharing one worker: sorting them to the
+      front changes which items fall into xdist's initial batch and evidently
+      co-schedules the two largest. Reverted. **`-n 6` stays and collection order is
+      left alone**; raising the worker count cannot help either, because the floor is
+      one indivisible test.
+      Runner-up durations: 110.9, 91.2, 25.1, 24.5, 19.5, 19.3 s.
+- [x] `uv run pytest -q` green (310 passed); `uv run ruff check .` clean;
+      `ruff format .` applied.
+- [x] Demos run and the figures were **looked at**, not exit-code checked — which is
+      how the f-I onset transient, the wrong-regime channel noise, the complex-pair
+      kink and the seeded-vs-selected wavelength were all caught.
+- [x] Update `CLAUDE.md` Status, memory, and this doc; commit and push.
 
 ## Explicitly deferred (do NOT do in Phase 2)
 
