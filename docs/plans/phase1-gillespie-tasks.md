@@ -102,14 +102,26 @@ fail** before the implementation is correct.
       Result seed 0: **slope -0.4606 +/- 0.0734**, CI[3 SE] = [-0.681, -0.240],
       PASS in ~245 s; seed 1 verified offline (-0.5191 +/- 0.1093, PASS), so the
       pass is not seed-luck. Single seed in the suite (a second would dominate it).
-      **Teeth (both FAIL, as required):** fixed-`Omega` propensities (never
-      threaded through) -> slope **-0.1669 +/- 0.0722**, fails the
-      *significantly-negative* leg; `Omega^2` propensities -> slope
-      **-1.1315 +/- 0.1850**, which *is* significantly negative and is rejected
-      **only** by the *consistent-with--1/2* leg — proving that leg has teeth on
-      its own. Both are test-local subclasses overriding `initial_state` to embed
-      a wrong system size; `gillespie.py` is untouched and the ODE reference is
-      unchanged, isolating the fluctuation scaling alone.
+      **Teeth (both FAIL, as required), each verified across seeds 0-3** — a tooth
+      that only bites on the pinned seed proves nothing, and the first draft of the
+      `Omega^2` one was exactly that (it *passed* at 2 of 4 seeds). Both are
+      test-local subclasses overriding `initial_state` to embed a wrong system
+      size; `gillespie.py` is untouched and the ODE reference is unchanged, so only
+      the fluctuation scaling differs.
+      - fixed-`Omega` propensities (never threaded through) -> slope
+        **-0.1363 +/- 0.0766**. Asserted on the *consistent* leg plus a scale-free
+        `D(8)/D(2) > 0.65` anchor (the law demands ~0.5; the real model measures
+        0.46). The *significantly-negative* leg is deliberately **not** asserted:
+        it trips when `slope/SE < -z`, and since slope and SE **both** scale as
+        `1/sqrt(R)` that ratio is replicate-independent — more replicates cannot
+        make it safer. Measured `slope/SE` over seeds 0-3: -1.78, -0.25, +2.25,
+        +1.53, i.e. ~1.7x wider than the nominal SE implies.
+      - `Omega^2` propensities -> slope **-0.9904 +/- 0.0774**, `|slope+1/2|`
+        0.4904 vs tolerance 0.2322 (2.11x). *Significantly negative* stays True, so
+        this is rejected **only** by the *consistent-with--1/2* leg — proving that
+        leg has teeth on its own. Here replicates *do* help (slope sits at a real
+        -1 while SE shrinks), so `R=24` and swept `Omega` out to 4 for lever arm;
+        margins over seeds 0-3: 2.11x, 1.78x, 1.67x, 2.19x.
 - [x] Non-statistical teeth alongside the slope: sustained limit cycle over ~10
       periods, symmetric-IC rejection, `OBSERVABLE_KEYS` column-matching
       `initial_concentrations` (a silent transposition would give a
@@ -130,8 +142,9 @@ fail** before the implementation is correct.
 - [x] Register `birth_death`, `isomerization`, `repressilator` in
       `models/__init__.py`.
 - [x] `uv run pytest -q` green; `uv run ruff check .` clean; `uv run ruff format .`.
-      **79 passed in 362 s** — the repressilator convergence check is ~245 s of
-      that, which is the price of the phase's headline validation.
+      **79 passed in 637 s** — the repressilator convergence check is ~245 s and
+      the seed-robust `Omega^2` tooth ~150 s, which is the price of the phase's
+      headline validation plus proof that it can fail.
 - [ ] Demo runs and produces both figures.
 - [ ] Update `CLAUDE.md` Status line, memory, and `phase0-...-tasks.md` "Next"
       stub; commit (Conventional Commits) and push per the batch/session-end ritual.

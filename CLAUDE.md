@@ -73,8 +73,11 @@ statistical `max(bootstrap, OLS)` slope SE; validated on `birth_death`, teeth vi
 pure per-replicate-vs-mean-first unit test + a `D*sqrt(Omega)` magnitude anchor) —
 and `repressilator` — the headline (step 6: 6-species Elowitz-Leibler Hill network,
 **no** `analytic_predictions`, validated by `convergence_report` at slope
-`-0.4606 +/- 0.0734`, with broken-Omega-scaling teeth failing at `-0.1669` and
-`-1.1315`) — all done. Two lessons worth carrying forward: `beta=1`, **not** the
+`-0.4606 +/- 0.0734`, with broken-Omega-scaling teeth failing at `-0.1363` and
+`-0.9904`, each verified across seeds 0-3) — all done. Lessons worth carrying
+forward: assert a broken-model tooth only on the leg that is *structurally* robust
+for that break (for a flat-slope break, `slope/SE` is replicate-independent, so
+more replicates never de-flake it); `beta=1`, **not** the
 textbook `beta=5`, is what actually oscillates (beta=5 damps to the fixed point);
 and `fit_mask` must exclude the low-`Omega` **phase-saturation knee** (`Omega <= 1`
 here), spotted as `D*sqrt(Omega)` falling below the plateau. Next: step 7 viz

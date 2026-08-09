@@ -19,7 +19,9 @@ are **not** the slope:
 * ``deterministic_rhs`` reproduces the textbook RHS, pinning the network's
   ``rates``/stoichiometry (which the SSA also uses) to the published equations;
 * two **deliberately broken Omega scalings** make the convergence check FAIL, in
-  two different ways — see below.
+  two different ways — see below. Both were verified across seeds 0-3: a tooth
+  that only bites on the pinned seed proves nothing, and the first draft of the
+  ``Omega^2`` one was exactly that (it *passed* at two of four seeds).
 
 Parameter choice (``alpha=216, alpha0=0.216, n_hill=2, beta=1``) was made from a
 measured ODE sweep, not copied blindly. ``beta=5`` — a common textbook value —
@@ -117,11 +119,10 @@ class _FixedOmegaRepressilator(Repressilator):
     """Propensities pinned to a constant system size, ignoring the swept ``Omega``.
 
     The realistic bug of simply failing to thread ``Omega`` through. Fluctuations
-    never shrink, so ``D(Omega)`` is flat and the slope is ~0: this fails the
-    *significantly negative* leg, which no amount of replicate noise can rescue.
+    never shrink, so ``D(Omega)`` is flat: the slope is ~0 and the check rejects it.
 
-    Measured at the config below: slope **-0.1669 +/- 0.0722**, CI[3 SE] =
-    [-0.384, +0.050] — ``consistent=False``, ``significant=False``, FAIL.
+    Measured at the config below (``seed=0``): slope **-0.1363 +/- 0.0766**,
+    CI[3 SE] = [-0.366, +0.093] — ``consistent=False``, ``significant=False``, FAIL.
     """
 
     def initial_state(self, params: RepressilatorParams, rng):
@@ -136,8 +137,9 @@ class _SquaredOmegaRepressilator(Repressilator):
     *significantly negative*, so only the *consistent with -1/2* leg can reject
     it. Without this, a green check would only prove "noise decreases somehow".
 
-    Measured at the config below: slope **-1.1315 +/- 0.1850**, CI[3 SE] =
-    [-1.687, -0.576] — ``consistent=False`` but ``significant=True``, FAIL.
+    Measured at the config below (``seed=0``): slope **-0.9904 +/- 0.0774**,
+    ``|slope + 1/2| = 0.4904`` against a tolerance of ``0.2322`` — a 2.11x margin.
+    ``consistent=False`` but ``significant=True``, FAIL.
     """
 
     def initial_state(self, params: RepressilatorParams, rng):
@@ -241,13 +243,33 @@ def test_repressilator_has_no_analytic_predictions():
 # The teeth: broken Omega scalings must FAIL the convergence check
 # ---------------------------------------------------------------------------
 #
-# Deliberately cheap configs (fewer replicates, 1 period). Detecting a *wrong*
-# slope needs far less precision than confirming the right one, and both failures
-# below are structural rather than marginal.
+# Both run at 1 period and were verified across seeds 0-3 — a tooth that only bites
+# on the pinned seed proves nothing. Each asserts only the leg that is structurally
+# robust for *that* break, and which leg that is differs between them (see the
+# individual docstrings): raising replicates strengthens the Omega^2 tooth and does
+# nothing at all for the fixed-Omega one.
 
 
 def test_fixed_omega_propensities_fail_the_convergence_check():
-    """Noise that never shrinks: slope ~0, so it cannot be significantly negative."""
+    """Noise that never shrinks: ``D(Omega)`` is flat, so the check must reject it.
+
+    Every point here has the *same* effective system size, so the three ``D``
+    values are statistically identical and the fitted slope is pure noise about 0.
+    That makes the assertions below a deliberate choice rather than an oversight:
+
+    * ``consistent`` (``|slope + 1/2| <= z*SE``) is asserted. It gets **more**
+      robust as replicates rise — slope -> 0 and SE -> 0, so the gap to -1/2 grows
+      relative to the tolerance. Measured over seeds 0-3 it clears by 1.6-2.8x.
+    * ``significant`` (``slope + z*SE < 0``) is **not** asserted. It trips exactly
+      when ``slope/SE < -z``, and *both* slope and SE scale as ``1/sqrt(R)``, so
+      that ratio's distribution is replicate-independent — more replicates cannot
+      make the assertion safer. Measured ``slope/SE`` over seeds 0-3 at R=16:
+      -1.78, -0.25, +2.25, +1.53 (spread ~1.7x wider than the nominal SE implies),
+      so asserting it would buy a flaky test for no extra teeth.
+
+    Instead the substance — "the noise does not shrink with Omega" — is asserted
+    directly as a magnitude anchor, which is scale-free and seed-stable.
+    """
     report = convergence_report(
         "_test_repressilator_fixed_omega",
         _BASE,
@@ -255,14 +277,18 @@ def test_fixed_omega_propensities_fail_the_convergence_check():
         omegas=[2.0, 4.0, 8.0],
         t_max=PERIOD,
         dt=_DT,
-        replicates=8,
+        replicates=16,
         n_grid=200,
         observable_keys=OBSERVABLE_KEYS,
         z=_Z,
         n_bootstrap=300,
     )
     assert not report.passed, str(report)
-    assert not report.significant, str(report)
+    assert not report.consistent, str(report)
+    # Omega^{-1/2} over a 4x range demands D(8)/D(2) ~ 0.5; the real model measures
+    # 0.46. This broken one stays near 1 (0.79-1.38 over seeds 0-3 at R=8 and 16).
+    ratio = float(report.discrepancy[-1] / report.discrepancy[0])
+    assert ratio > 0.65, f"D fell like Omega^-1/2 despite fixed propensities: {ratio}"
 
 
 def test_squared_omega_propensities_fail_the_convergence_check():
@@ -270,15 +296,26 @@ def test_squared_omega_propensities_fail_the_convergence_check():
 
     ``significant`` stays True here, which is the point — this failure is caught
     *only* by the "consistent with -1/2" test, proving that leg has teeth.
+
+    Rejection rests on ``|slope + 1/2| > z*SE``, so this config is sized for that
+    margin rather than for cheapness. An earlier, cheaper version
+    (``omegas=[1, 1.5, 2, 2.5]``, ``R=8``) was **seed-lucky**: it rejected at
+    seed 0 by only 1.14x, and at seeds 1 and 2 the broken model *passed* the check
+    outright. Two things fixed it, both of which raise the margin without touching
+    the gap: swept ``Omega`` out to 4 (the OLS SE goes as
+    ``1/(sqrt(K) * sd(log Omega))``, and ``sd(log Omega)`` rises 0.34 -> 0.49), and
+    ``R`` to 24 — replicates *do* help here, unlike in the fixed-Omega tooth,
+    because the slope sits at a real -1 while the SE shrinks as ``1/sqrt(R)``.
+    Verified over seeds 0-3: margins 2.11x, 1.78x, 1.67x, 2.19x, all rejecting.
     """
     report = convergence_report(
         "_test_repressilator_squared_omega",
         _BASE,
         _factory,
-        omegas=[1.0, 1.5, 2.0, 2.5],
+        omegas=[1.0, 1.5, 2.0, 3.0, 4.0],
         t_max=PERIOD,
         dt=_DT,
-        replicates=8,
+        replicates=24,
         n_grid=200,
         observable_keys=OBSERVABLE_KEYS,
         z=_Z,
