@@ -32,11 +32,29 @@ targets — fill them in as each step lands.
 
 ## 2a — Hodgkin-Huxley
 
-- [ ] `models/hh_rates.py` — six rate functions + `_linoid(x, k)` for the
-      removable `0/0`. **Test first:** evaluate exactly at `V = -40` and `V = -55`
-      (limit `= k`), check continuity across them, and check `x_inf`/`tau` against
-      the slice table. A naive implementation returns `nan` there — confirm the
-      test is red against it.
+- [x] `models/hh_rates.py` — six rate functions + `_linoid(x, k)` for the
+      removable `0/0` at `V = -40` / `V = -55`. Test written first and the naive
+      transcription **confirmed red (11 failed / 3 passed)**. 15 tests, all
+      mutation-checked:
+      - *no guard at all* (literal `x/(1-exp(-x/k))`) -> 11 failures: `nan` at both
+        singularities, and it poisons the dense sweep, the vectorized-vs-scalar
+        check and every `tau > 0` assertion.
+      - *guard but no `expm1`* -> 3 failures. This one needed the test to be
+        **rebuilt to have teeth**: the first draft probed via `alpha_m(-40 + delta)`
+        and passed the mutant, because recovering `x` as `(-40 + delta) + 40`
+        carries ~7e-15 of rounding (one ulp at 40) — enough to flip which side of
+        the `1e-7 k` guard a nominal `1e-6` lands on, so every probe silently took
+        the series branch and the exp branch went untested. Measured naive relative
+        error at `k=10`: **4.9e-10 at x=1e-6, 1.6e-11 at x=1e-5** — so the band
+        *just above* the guard is the only place the choice shows, and the test now
+        calls `_linoid` directly across `x in [1e-6, 0.1]` against an independent
+        Bernoulli series `k(1 + u/2 + u^2/12 - u^4/720)` at `rel=1e-14`.
+      - *`alpha_h`/`beta_h` swapped* -> 3 failures (published-fit values,
+        activation-vs-inactivation direction, asymptotic limits).
+      Also recorded: `n_inf` reaches only **0.9982 at +200 mV** (`beta_n` has the
+      slowest length constant of the six, 80 mV), so the asymptotic test asserts
+      per-gate bounds rather than one shared tolerance — a uniform `abs=1e-3` was
+      simply wrong there, and it was the test that was wrong, not the code.
 - [ ] `models/hh_voltage_clamp.py` — clamped gating, `dx/dt = (x_inf - x)/tau`,
       `analytic_predictions` from the exact `x(t) = x_inf + (x0 - x_inf)e^{-t/tau}`.
       **The category-A lead anchor** — validates every rate function individually.
@@ -91,6 +109,16 @@ targets — fill them in as each step lands.
       **bit-identical**, sha256-fingerprinted before and after.
 - [ ] Re-time `-n` (currently 6, floored by the 122 s repressilator check). The
       right `-n` is a function of the *runner-up* durations, not core count.
+      **Open observation from the step-1 run: 100 passed in 203.8 s, against the
+      129 s recorded at the end of Phase 1.** The 15 new rate tests cost 0.05 s, so
+      this is not their cost. `122 + 96 = 218 ~ 203` points at the known failure
+      mode — xdist's `--dist load` packing the repressilator slope check and the
+      squared-Omega tooth onto one worker — recurring because adding a file shifts
+      dispatch order, not because `-n 6` is wrong per se. Confirm with
+      `--durations=10` on the next full run before changing `-n`; if it is
+      scheduling luck rather than a regression, the durable fix is to make the two
+      multi-minute tests dispatch **first** (they are late in alphabetical
+      collection order), not to raise the worker count.
 - [ ] `uv run pytest -q` green; `uv run ruff check .` clean; `ruff format .`.
 - [ ] Demos run and the figures were **looked at**, not just exit-code checked.
 - [ ] Update `CLAUDE.md` Status, memory, and this doc; commit and push.
