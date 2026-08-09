@@ -96,9 +96,46 @@ targets — fill them in as each step lands.
       - Clamping to `V = -40` / `V = -55` is a test in its own right: a clamp
         protocol steps to round numbers, so those are the realistic way step 1's
         `0/0` trap gets hit.
-- [ ] `models/hodgkin_huxley.py` — deterministic 4-D model on `core/ode.py`
-      (`dt` is a **param**, not a `step` arg). Tests: resting fixed point
-      (`rhs = 0`, no drift), RK4 order 4 on the real RHS.
+- [x] `models/hodgkin_huxley.py` — deterministic 4-D model on `core/ode.py`
+      (`dt` is a **param**, not a `step` arg). Test written first, confirmed red.
+      22 tests; five mutants killed: `m^3 -> m^2` (12 failures), `n^4 -> n^3` (13),
+      *ionic current sign flipped* (11), *gate closing term sign flipped* (13),
+      *stability guard disabled* (1 — its dedicated test, as intended).
+      - **The anchoring boundary, stated rather than glossed.**
+        `analytic_predictions` returns the resting fixed point found by
+        **root-finding** the algebraic steady state, which the simulation reaches by
+        **time-integration** — two genuinely different code paths, so agreement
+        catches drift between them. It **cannot** catch a wrong `g_na` or `m^2` for
+        `m^3`: both paths move *consistently* and the root stays a root. What does
+        catch those is `textbook_rhs` in the test file — a **separate
+        hand-transcription of the published equations**, written from the paper, not
+        from the implementation. That is the real teeth (mutants 1, 2, 3, 5).
+        `V_rest ~ -65 mV` is the only other independent anchor and it is category C,
+        so it is asserted as a coarse bound (`-66 < V < -64`), nothing tighter.
+      - **`analytic_predictions` refuses an unstable fixed point.** Past the
+        subcritical Hopf (stable at `I=8`, unstable by `I=10`) the attractor is a
+        limit cycle; returning the fixed point would be a wrong number that still
+        looks green, so it raises — the same stance as `require_termination`.
+      - **Two separate claims, two separate tolerances.** *Stationarity* (start AT
+        the fixed point, nothing moves) is checked through `validate()` with a
+        Richardson `sem_floor`, and is razor-sharp. *Attraction* (start 5 mV away,
+        arrive) is a different claim whose error is dominated by the leftover
+        transient, which Richardson cannot see — both `dt` and `dt/2` carry the same
+        one — so its tolerance is the **measured** `|y(t_max) - y(t_max/2)|`.
+        Measured residual from a 5 mV offset (`tau = 8.29 ms`): **2.9e-8 at 100 ms,
+        6.9e-11 at 150 ms, 1.8e-13 at 200 ms**.
+      - Category C asserted **structurally only**: spike count monotone
+        non-decreasing in `I`, zero spikes at `I=0`, some at `I=20`, and a spike
+        overshoots 0 mV then after-hyperpolarises. No literature number is a bound.
+      - `resting_state` scans for sign changes and **raises unless there is exactly
+        one root** — HH's bistability is fixed-point-vs-limit-cycle, not two fixed
+        points, so a second root means the params left this helper's regime.
+      - **Profiling signal, recorded not acted on: 70.8 us per RK4 step** (~17.7 us
+        per RHS evaluation), dominated by NumPy scalar overhead in the six rate
+        functions. Irrelevant for the deterministic checks, but it sizes the
+        stochastic sweep: at `t_max = 40 ms` (subthreshold `tau ~ 8 ms`) a replicate
+        is 4000 steps ~ 0.28 s, so `R=20 x K=5` is ~28 s — affordable. A 200 ms
+        horizon would have been ~140 s and a suite floor on its own.
 - [ ] Category-C report: rheobase, f-I curve, spike shape, refractory period, the
       subcritical-Hopf bistable band. **Labelled literature-anchored in its own
       output; not in `analytic_predictions` — and never in an assertion whose bound
@@ -109,9 +146,31 @@ targets — fill them in as each step lands.
       *structural* fact only: spike count is monotone non-decreasing in `I` over the
       swept range, some `I` gives zero spikes and some gives more than zero.
 - [ ] `models/hh_stochastic.py` — 8-state Na + 5-state K **occupancy counts**,
-      fixed-`dt` hybrid step (multinomial transitions, then RK4 on `V`),
-      `DeterministicLimitModel`. `O(#states)` per step, independent of `N`.
-      **Price the sweep before writing the test** (as the repressilator was).
+      fixed-`dt` hybrid step, `DeterministicLimitModel`. `O(#states)` per step,
+      independent of `N`. **Price the sweep before writing the test.**
+      **Design de-risked ahead of implementation (probe in `temp/phase2-slice/`):**
+      - Use the **exact** channel propagator, not `rate * dt` transition
+        probabilities. With `V` frozen over a step the 8-state Na chain *factorizes*
+        (three independent `m` subunits x one `h`), so `P = kron(P_m, P_h)` where
+        each factor is a binomial convolution of the closed-form 2-state propagator
+        `p_CO = x_inf(1 - e^{-dt/tau})`, `p_OO = x_inf + (1 - x_inf)e^{-dt/tau}`.
+        **Verified against a brute-force scaling-and-squaring matrix exponential of
+        the generator: max deviation 6.7e-16 across `V in {-90,-65,-40,0,40}`, all
+        three gates, `dt in {0.01, 0.001}`.** That removes the channel-kinetics
+        discretization error *entirely*, leaving only the `V`-splitting error — which
+        matters, because a `rate*dt` scheme's `O(dt)` bias is **`N`-independent** and
+        would floor `D(N)` and flatten the slope. Keep the `expm` comparison as the
+        test's independent reference.
+      - `P` rows sum to 1 to 2.2e-16; update by one `multinomial(n_s, P[s])` per
+        occupied state (13 draws/step total).
+      - **Measured naive cost: 72 us/step for the Na update alone**, dominated by
+        rebuilding the propagator in a Python triple loop with `math.comb` — plus
+        ~70 us/step for the `V` RK4. That is ~0.7 s per 4000-step replicate and
+        ~72 s for an `R=20 x K=5` sweep, i.e. a suite floor on its own. Vectorize the
+        propagator build (the binomial coefficients are constants; the matrices are
+        4x4 and 5x5) **before** writing the sweep, and re-measure. This is the
+        profiling-driven optimization Phase 2 was meant to surface, and the likely
+        answer is plain NumPy, not numba.
 - [ ] Convergence-pathway fixes for HH — **(1) revised, and it needs no
       `convergence.py` change at all.** The original plan was to add an
       interpolation mode, because `_sample_on_grid` step-holds (right for SSA,

@@ -11,6 +11,7 @@ from __future__ import annotations
 from sandbox.models import (
     birth_death,  # noqa: F401  (import triggers registration)
     hh_voltage_clamp,  # noqa: F401  (import triggers registration)
+    hodgkin_huxley,  # noqa: F401  (import triggers registration)
     isomerization,  # noqa: F401  (import triggers registration)
     repressilator,  # noqa: F401  (import triggers registration)
     wright_fisher,  # noqa: F401  (import triggers registration)
@@ -21,6 +22,7 @@ from sandbox.models.hh_voltage_clamp import (
     HHVoltageClampParams,
     HHVoltageClampState,
 )
+from sandbox.models.hodgkin_huxley import HHParams, HHState, HodgkinHuxley
 from sandbox.models.isomerization import (
     Isomerization,
     IsomerizationParams,
@@ -37,9 +39,12 @@ __all__ = [
     "BirthDeath",
     "BirthDeathParams",
     "BirthDeathState",
+    "HHParams",
+    "HHState",
     "HHVoltageClamp",
     "HHVoltageClampParams",
     "HHVoltageClampState",
+    "HodgkinHuxley",
     "Isomerization",
     "IsomerizationParams",
     "IsomerizationState",
