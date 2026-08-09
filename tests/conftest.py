@@ -39,6 +39,18 @@ def _lower_process_priority() -> None:
 _lower_process_priority()
 
 
+# Collection order is deliberately left alone. It is tempting to sort the two
+# multi-minute convergence tests to the front so xdist cannot pack them onto one
+# worker -- the Phase-1 close-out proposed exactly that. It was implemented here as
+# a `pytest_collection_modifyitems` hook and **measured 228.7 s and 227.1 s against
+# a 130 s baseline**, reproducibly: sorting them to the front changes which items
+# fall into xdist's initial batch and evidently co-schedules the two largest
+# (110.9 + 91.2 = 202 s on one worker). Reverted.
+#
+# Raising `-n` cannot help either: the suite's floor is one indivisible 110.9 s
+# test, and 130 s already sits only 17% above it. See docs/plans/phase2-tasks.md.
+
+
 @pytest.fixture
 def wf_params_factory():
     """Factory turning a plain dict into WFParams (the core stays params-agnostic)."""

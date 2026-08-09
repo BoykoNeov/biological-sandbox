@@ -44,10 +44,11 @@ Against ``D(N) >= 0.035 mV`` over the swept range that is under 3%, and halving
 ``dt`` moves ``D(N)`` by at most 1.9 standard errors — no floor.
 
 (Advancing ``V`` at the *post*-transition conductance, rather than a pre/post
-midpoint, was also measured: 1.7e-4 mV vs 1.9e-2 mV on the same transient. The
-"more accurate" midpoint rule is 100x worse here, because using the newer gate
-value partially compensates for having frozen ``V`` at the older one. It is not
-built.)
+midpoint, was also measured — on **two** cases, because one favourable ratio is
+not a result: **1.7e-4 vs 1.9e-2 mV** on the sub-rheobase transient, and
+**0.144 vs 10.03 mV** through a rebound spike, where both are large. The "more
+accurate" midpoint rule is worse in both, because using the newer gate value
+partially compensates for having frozen ``V`` at the older one. It is not built.)
 
 **No ``analytic_predictions``, deliberately.** The obvious candidate — the
 stationary mean of ``V`` equals the ODE fixed point — is *false* at finite ``N``:
