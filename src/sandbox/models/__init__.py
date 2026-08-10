@@ -9,6 +9,7 @@ the verifiable/exploratory split.
 from __future__ import annotations
 
 from sandbox.models import (
+    adaptive_dynamics,  # noqa: F401  (import triggers registration)
     birth_death,  # noqa: F401  (import triggers registration)
     daisyworld,  # noqa: F401  (import triggers registration)
     glv,  # noqa: F401  (import triggers registration)
@@ -20,7 +21,13 @@ from sandbox.models import (
     isomerization,  # noqa: F401  (import triggers registration)
     lotka_volterra,  # noqa: F401  (import triggers registration)
     repressilator,  # noqa: F401  (import triggers registration)
+    trait_branching,  # noqa: F401  (import triggers registration)
     wright_fisher,  # noqa: F401  (import triggers registration)
+)
+from sandbox.models.adaptive_dynamics import (
+    AdaptiveDynamics,
+    AdaptiveDynamicsParams,
+    AdaptiveDynamicsState,
 )
 from sandbox.models.birth_death import BirthDeath, BirthDeathParams, BirthDeathState
 from sandbox.models.daisyworld import Daisyworld, DaisyworldParams, DaisyworldState
@@ -53,9 +60,17 @@ from sandbox.models.repressilator import (
     RepressilatorParams,
     RepressilatorState,
 )
+from sandbox.models.trait_branching import (
+    TraitBranching,
+    TraitBranchingParams,
+    TraitBranchingState,
+)
 from sandbox.models.wright_fisher import WFParams, WFState, WrightFisher
 
 __all__ = [
+    "AdaptiveDynamics",
+    "AdaptiveDynamicsParams",
+    "AdaptiveDynamicsState",
     "BirthDeath",
     "BirthDeathParams",
     "BirthDeathState",
@@ -89,6 +104,9 @@ __all__ = [
     "Repressilator",
     "RepressilatorParams",
     "RepressilatorState",
+    "TraitBranching",
+    "TraitBranchingParams",
+    "TraitBranchingState",
     "WFParams",
     "WFState",
     "WrightFisher",
