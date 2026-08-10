@@ -229,5 +229,58 @@ carrying: transposing `A` **everywhere** leaves `test_validate_reproduces_the_
 equilibrium` green, because a consistently transposed system still has a genuine
 fixed point. Only the hand-written double-loop RHS catches it.
 
-Next: implement 3b (`core/random_matrix.py` — **not** a `Model`). See
-`docs/plans/phase3-tasks.md`.
+**3b is built** — `core/random_matrix.py` (**not** a `Model`: no `step`, no
+`observables`, no `state.t`; a plain pytest outside the `ValidationSuite` path) plus
+`demos/random_matrix.py`. 32 tests; suite **389 passed in 240.59 s** at `-n 6`.
+
+**Pinning the ensemble before writing a tolerance paid for itself immediately.** The
+convention was *recovered from the recorded tables rather than guessed*: the elliptic
+`pred R(1+rho)` column `4/12/20/28/36` solves to `R = 20` at `S = 400`, hence
+`sigma sqrt(C) = 1`; and only the map `(Re/(R(1+rho)), Im/(R(1-rho)))` reproduces the
+recorded `pred = 0.25`. Under it both tables reproduce, `E[max Re]` included — and
+`E[max Re]` is the real pin, since the *fraction* is insensitive to `d` and to the
+overall scale of `sigma`/`C` (both absorbed into `R`), which is exactly what makes a
+`rho^2` failure diagnostic of the **draw**.
+
+**Then the plan's bias constant collapsed under re-measurement — a fourth instance of
+"a number travels with its estimator", with a new mechanism.** Re-running the plan's
+own estimator reproduced the bias at `S = 50/100/200` but not at `S = 400/800`, where
+it sits **below its own SE** (`z = 0.69, 0.90`): the recorded slope `-0.9279` was
+partly fitted through noise. Re-measured where every point resolves, it is `0.70/S`,
+slope `-1.0086`. Worse, `0.70/S` is itself a `probe = 0.5` artifact: `bias * S` spans
+`0.48...1.13` across circular probes, and the *exponent* differs too — `-0.8814`,
+`-1.0274`, `-0.6189` at `probe = 0.2/0.5/0.9`, with elliptic `rho = +0.8` at `-0.8404`
+on a bias 4-5x larger. **The tempting bulk/edge mechanism is wrong**: it predicts
+`probe = 0.2`, deep in the bulk, at `-1`; it measures `-0.8814`, shallower than
+`probe = 0.5`. Recorded as probe-dependent and unexplained.
+
+That killed the single-track design. The direct fraction check needs `bias << SE` and
+the scaling check needs `bias >> SE`, so they reach **opposite** probes: the one
+affordable direct configuration is `probe = 0.5, S = 400, 9 draws` (bias `0.24 SE`,
+draws *derived*, not chosen), while the asymptotic law is asserted on elliptic
+`rho = +0.8` — unassertable directly at any affordable `S`, cheap here. And no larger
+`S` rescues it: `eigvals` costs 0.018 s at `S = 200`, 0.15 s at `400`, then **2.0 s at
+`600` — 13x for 3.4x the FLOPs.** `S = 400` is the last cheap size.
+
+**The scaling assertion was green for the wrong reason until the teeth caught it** —
+the phase's sixth such test, and the sharpest. It asserted only that the exponent was
+*significantly negative*, and a wrong-`R` draw passed: a constant offset fits a
+near-perfect line, so its exponent reads `-0.0089 +/- 0.0015`, clearing zero at 6
+sigma, while the discrepancy sits at `0.33` and does not move. **Statistical
+significance is free when the residuals are small.** The check now demands a decay
+*rate* below `-0.15`, a threshold placed in a measured gap (~90 SE above the teeth,
+~7 SE below the shallowest correct probe). And **one tooth had to be moved**: wrong
+`R` does not bite the scaling check at all (its offset itself decays, `S^-0.34...-0.42`,
+passing 3 of 4 seeds) and now lives on the direct probe, where it bites at `>5 SE` —
+the repressilator `Omega^2` lesson again. Flipped-`rho`-sign and Hermitian-ized bite
+at 4/4 seeds, and the flipped-sign tooth's blind spot (bit-identical at `rho = 0`) is
+asserted rather than left implicit.
+
+**The open 3a timing anomaly is closed as *not decidable*.** The floor test was
+measured three times in one session — `123.03` and `154.99 s` serial-and-alone, and
+`189.81 s` in-suite — a `+-30%` spread larger than the effect the dichotomy was meant
+to detect, and across three different estimators besides. **Bracket any suite-timing
+claim on this machine by `+-30%` or it is noise.**
+
+Next: implement 3c (`models/glv_stochastic.py`), and close or explicitly label the
+`O(1/Omega)` bias. See `docs/plans/phase3-tasks.md`.

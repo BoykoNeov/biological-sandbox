@@ -169,23 +169,139 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## 3b — the random community matrix
 
-- [ ] **Pin the ensemble construction against one recorded row before writing any
-      tolerance** — the three-minute check that caught the `A` convention in 3a,
-      and the discipline 3a's three non-transferring constants argue for. The
-      recorded `z <= 1.38`, `z <= 2.31` and bias slope `-0.9279` depend on the draw
-      convention, `C`, and the ellipse-to-disc mapping at `t = 0.5`, none of which
-      the slice fully recorded. See [[numbers-travel-with-their-estimator]].
-- [ ] `core/random_matrix.py` — May/elliptic ensemble; circular- and elliptic-law
-      fraction checks with **binomial** SE and `S` **derived** from
-      `0.6/S << SE(n)`. **NOT a `Model`** — no `step`, no `observables`, no
-      `state.t`; a plain pytest outside the `ValidationSuite` path, not registered
-      in `models/__init__.py`. Do not contrive a `Model` whose `step` draws a
-      matrix.
-- [ ] Teeth: wrong `R`, wrong `rho` sign, a Hermitian-ized draw. Verify across 3-4
-      seeds; assert only the structurally robust leg.
-- [ ] Demo reports the `P(stable)` transition and its sharpening — **reported, not
-      asserted** — and states plainly that feasibility-conditioned gLV is **not**
-      claimed to obey it, with the feasibility table as evidence.
+- [x] **Pin the ensemble construction against one recorded row before writing any
+      tolerance** — done, and it paid. The convention was **recovered from the
+      tables rather than guessed**: the elliptic `pred R(1+rho)` column
+      `4/12/20/28/36` solves to `R = 20` at `S = 400`, so `sigma sqrt(C) = 1`, i.e.
+      `C = 1, sigma = 1`; and the `t = 0.5` mapping is
+      `(Re/(R(1+rho)), Im/(R(1-rho)))` inside radius `t`, since only that gives the
+      recorded `pred = t^2 = 0.25`. Under that convention both tables reproduce,
+      including the `E[max Re]` column — which is the real pin, being sensitive to
+      the draw convention in a way the fraction column is not (the fraction is
+      **insensitive to `d` and to the overall scale of `sigma`/`C`**, both absorbed
+      into `R`, which is exactly what makes a `rho^2` failure diagnostic of the
+      *draw*).
+- [x] **The recorded bias constant did not survive re-measurement — and this is a
+      fourth instance of [[numbers-travel-with-their-estimator]], with a new
+      mechanism.** Re-running the plan's own estimator (`rho = 0.5`, eigenvalue
+      count held at 40 000) reproduced the bias at `S = 50/100/200` (`z = 6.48,
+      3.33, 1.51`) but **not** at `S = 400/800`, where the measured bias sits
+      *below its own SE* (`z = 0.69, 0.90`, SE `2.17e-3`). Those two rows are not
+      measurements of a bias; the recorded slope `-0.9279` was fitted partly
+      through noise. Re-measured at 200 000 eigenvalues over `S = 25/50/100/200`,
+      where every row carries `z >> 1` (`27.53, 13.85, 7.58, 3.27`), the law is
+      **`bias = 0.70/S`, slope `-1.0086`** — i.e. exactly `1/S`, and a ~17% larger
+      constant. The plan's own sentence ("at `S = 400` and 20 000 eigenvalues bias
+      and SE are the same size — the boundary, not a safe point") was *understating*
+      it: at 40 000 eigenvalues `S = 400` is already past the boundary. Use
+      `0.70/S`, and note the irony that **the bias is only measurable at the small
+      `S` where the asymptotic law it corrects is least valid.**
+- [x] **`0.70/S` is itself a `rho = 0.5` artifact, and the bias-negligible rule
+      cannot be met.** Two measurements, both at two seeds:
+      - **`c(rho) = bias * S` is not constant in `rho`** — at `S = 100`, 200 000
+        eigenvalues, it runs `0.484 / 0.611 / 0.825 / 0.874 / 1.126 / 1.105 / 0.272`
+        for `rho = 0.2 / 0.4 / 0.5 / 0.6 / 0.8 / 0.9 / 0.95` (all `z > 4`).
+      - **Worse, `c(rho)` is not constant in `S` either, except at `rho = 0.5`.**
+        First read from two sizes, which was **not enough** — a two-point slope
+        gave `S^-0.67` with a `+-0.3` ratio uncertainty, putting `-1.0` only
+        ~1.4 sigma out. *The same error this section catches in the slice.*
+        Re-measured over **four** sizes (`S = 25/50/100/200`), 200 000 eigenvalues,
+        two seeds, every point at `z > 4`:
+
+        | probe | exponent | `c = bias * S`, `S = 25 -> 200` |
+        |---|---|---|
+        | circular `rho = 0.2` | `-0.8814 +- 0.0250` | 0.386 / 0.417 / 0.430 / 0.503 |
+        | circular `rho = 0.5` | `-1.0274 +- 0.0231` | 0.692 / 0.722 / 0.696 / 0.658 — **flat** |
+        | circular `rho = 0.9` | `-0.6189 +- 0.0673` | 0.589 / 0.906 / 1.143 / 1.315 |
+        | elliptic `rho = -0.8` | `-0.7733 +- 0.1472` | 0.414 / 0.464 / 0.405 / 0.731 — non-monotone |
+        | elliptic `rho = +0.8` | `-0.8404 +- 0.0150` | 2.729 / 3.169 / 3.504 / 3.816 |
+
+        The exponents **do** differ — `rho = 0.9` vs `rho = 0.5` is 5.7 sigma
+        apart — and `rho = 0.5` is the exception, the only probe with `c` flat and
+        the exponent at `-1`. **But the tempting mechanism is wrong.** A bulk/edge
+        split (an `O(1/S)` bulk correction plus a slower one inside a Ginibre edge
+        layer of width `~S^-1/2`) predicts `rho = 0.2` deep in the bulk at `-1`;
+        it measures `-0.8814`, shallower than `rho = 0.5`. The ordering is not
+        monotone in `rho`, so the exponent is recorded as **probe-dependent and
+        unexplained**, not as a two-term law.
+      - **The elliptic bias is a different animal at `rho = +0.8`**: `bias * S` is
+        `3.50` at `S = 100` and `3.90` at `S = 200` (decay `~S^-0.75`), against a
+        circular peak of `1.15`. Extrapolating to `S = 400` predicts `1.24e-2` and
+        the pin measured `1.21e-2` — so the law is confirmed, and the probe is
+        4-5x worse than any circular one. `rho = 0` recovers the circular `0.70`
+        exactly, as it must.
+      - **Consequence.** The binding quantity is `bias/SE`, not `bias`, so the
+        binding probe maximizes `c(rho)/sqrt(p(1-p))` — which is `rho = 0.9`
+        (`2.82`), with `rho = 0.2` (`2.47`) *ahead of* `rho = 0.8` (`2.35`),
+        because SE collapses near `p -> 1` faster than `c` grows. Requiring
+        `bias <= SE/4` at `S = 400` then allows **~2 draws at `rho = 0.2`, ~1.4 at
+        `rho = 0.9`, and under one draw at elliptic `rho = +0.8`**. There is no
+        affordable `S` that fixes this: see the cost cliff below. **A
+        bias-negligible multi-probe assertion is not available**, and deriving the
+        elliptic config from the circular constant would have shipped a test that
+        fails a correct implementation.
+- [x] **`S = 400` is derived by a cost cliff, not by taste.** `eigvals` per draw:
+      `0.018 s` at `S = 200`, `0.15 s` at `400` (8x for 8x FLOPs, as expected),
+      then `0.28-0.92 s` at `500` and **`2.0 s` at `600` — 13x the `S = 400` cost
+      for 3.4x the FLOPs**, and `4.3 s` at `800`. Whatever the cause (cache or
+      LAPACK blocking), `S = 400` is the last cheap size and the `S^3` cost model
+      does not hold past it.
+- [x] **Most of the edge bias is the zero diagonal — and that is May's convention,
+      not a bug.** Filling the diagonal Ginibre-style drops `c(0.9)` from `1.06` to
+      `0.35` while barely moving `c(0.2)` (`0.41 -> 0.42`) or `c(0.5)`
+      (`0.70 -> 0.51`). Zeroing the diagonal pins `trace = 0` exactly, which
+      constrains the eigenvalue sum and redistributes mass at the edge. May's `B`
+      *has* a zero diagonal — self-interaction is the `-d I` term — and the
+      zero-diagonal draw is what reproduces the recorded tables, so this is a
+      property of the ensemble under test, not something to correct away.
+- [x] `core/random_matrix.py` — May/elliptic ensemble, **not a `Model`** (no `step`,
+      no `observables`, no `state.t`; a plain pytest outside the `ValidationSuite`
+      path, not registered in `models/__init__.py`). **32 tests, suite 389 passed
+      in 240.59 s.** The design ended up with *two tracks*, because the direct
+      fraction check and the scaling check want opposite regimes:
+      - `fraction_report` — the direct probe, at the **one** bias-negligible
+        configuration (`probe = 0.5`, `S = 400`, **9 draws derived** by
+        `max_draws_for_negligible_bias`, bias `0.24 SE`). It refuses a
+        bias-limited configuration rather than asserting against a tolerance it
+        will eventually violate, which is what stops a caller buying spurious
+        precision with draws.
+      - `bias_scaling_report` — the asymptotic law, asserted on **elliptic
+        `rho = +0.8`**, whose 4-5x larger bias makes it *unassertable* by the
+        direct check and *cheap* by this one. Measured exponent `-0.838 / -0.820 /
+        -0.887 / -0.805` at seeds 0-3.
+- [x] **The first version of the scaling assertion was green for the wrong reason,
+      and the teeth caught it.** It asserted only that the exponent was
+      *significantly negative*. A wrong-`R` draw passed: a constant offset fits a
+      near-perfect straight line, so its exponent comes out **`-0.0089 +/- 0.0015`**
+      — clearing zero at 6 sigma — while the discrepancy itself sits at `0.33` and
+      does not move. **Statistical significance is free when the residuals are
+      small; the discriminating quantity is the decay *rate*.** The check now
+      requires the exponent below `-min_decay_rate` (default `0.15`), a threshold
+      placed in a *measured* gap: ~90 SE above the teeth (`~-0.01`) and ~7 SE below
+      the shallowest correct probe (`-0.62 +- 0.067`). Kept as a data-only unit
+      test, `test_significance_alone_would_have_passed_a_constant_offset`.
+- [x] Teeth verified across seeds 0-3 — and **one of the three does not belong on
+      this check**, which is the repressilator `Omega^2` lesson in a new instance.
+      - *flipped `rho` sign* (`+0.008 / +0.020 / +0.023 / +0.025` — the discrepancy
+        **grows**) and *Hermitian-ized draw* (`-0.025 / -0.016 / -0.023 / -0.009`
+        on a discrepancy of `0.34`, flat to 2% across 8x in `S`) bite at every seed.
+      - *wrong `R`* does **not** bite the scaling check — it passes at 3 of 4 seeds,
+        because a misscaled radius leaves an offset that *itself* decays, measured
+        at `S^-0.34 ... S^-0.42`, which no threshold separates from the shallowest
+        correct probe. It was moved to the **direct probe**, where it bites at
+        `>5 SE`. A tooth must bite the right check.
+      - The flipped-sign tooth's own blind spot is asserted rather than left
+        implicit: at `rho = 0` it is bit-identical, so it is only meaningful at
+        `|rho| >= 0.4`. (The `linspace` lesson.)
+- [x] `demos/random_matrix.py` — five acts. The elliptic law with a figure whose
+      ellipse is **predicted, not fitted**; the finite-`S` bias with the exponents
+      *reported*; `P(stable)` sharpening (`S = 25/50/100`) **reported, not
+      asserted**; and the two-act refusal, with the feasibility table re-measured
+      live (`0.435 / 0.000 / 0.000` at `S = 40`) and the spectrum shift
+      (`max Re eig(A) = -0.391` against `max Re eig(diag(x*) A) = -0.106`).
+      Note the slice's `x*`-span figure of 67 did not reproduce (this run: mean
+      546) — `max/min` is heavy-tailed, so its **mean is an outlier report, not a
+      summary**; the demo prints the median.
 
 ## 3c — stochastic gLV
 
@@ -239,14 +355,20 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## All
 
-- [ ] Re-time the suite; update `CLAUDE.md`, memory, docs; commit and push.
-      **Use `--durations=8` and settle the open 3a anomaly:** the post-3a run read
-      **171.05 s** against a 203-232 s baseline — *faster* despite 47 new tests, on
-      a machine that was not idle. If the repressilator floor test also dropped
-      from its recorded 162.17 s, it is the machine and nothing else. If the floor
-      held near 162 s while the total fell, **xdist packing changed when 47 fast
-      tests entered collection** — a real finding, and the same mechanism that made
-      the Phase-1 `-n` "fix" measure 75% worse.
+- [x] **The open 3a timing anomaly is closed — as *not decidable at this
+      resolution*, which is itself the finding.** The dichotomy asked us to read a
+      signal from whether the repressilator floor test "held near 162.17 s". It
+      cannot: that test was measured **three times in one session at 123.03 s and
+      154.99 s (serial, alone, nothing contending) and 189.81 s (in-suite, `-n 6`)**
+      — a spread of +-30%, comfortably larger than the effect the dichotomy was
+      trying to detect. Both branches are consistent with the data, so the
+      xdist-packing hypothesis is neither confirmed nor refuted. Note also that the
+      two serial runs and the in-suite run are **three different estimators**, so
+      even the 155-vs-190 gap is not a like-for-like comparison; see
+      [[numbers-travel-with-their-estimator]]. **Any future suite-timing claim on
+      this machine must be bracketed by +-30% or it is noise.**
+- [ ] Re-time the suite at phase end; update `CLAUDE.md`, memory, docs; commit and
+      push.
 
 ## Measurements to record as they land
 
@@ -263,9 +385,19 @@ depended on. **Only the scaling travels; the constant does not.**
 | LV `V` drift over `t = 100` at `dt = 0.01` | 0 | **9.3e-15** (`amp = 0.4`), **1.6e-11** (`amp = 4.0`) |
 | LV cycle average `\|<x> - x*\|` at `dt = 2.5e-3` | 0 | **3.2e-10 / 3.7e-9 / 4.0e-8** at `amp = 0.4 / 1.2 / 4.0` |
 | 3a mutants confirmed red | all | **13 / 13** (11 model-side, 2 test-side) |
-| Circular-law fraction, `z` | < 4 | <= 1.38 (slice) |
-| Elliptic-law fraction, `z` | < 4 | <= 2.31 (slice) |
-| Circular-law finite-`S` bias | — | `~ 0.6/S`, slope -0.9279 (slice) |
+| Circular-law fraction, `z` | < 4 | <= 1.38 (slice); **<= 0.76 (pinned, seed 0)** |
+| Elliptic-law fraction, `z` | < 4 | <= 2.31 (slice); **<= 2.79 (pinned, seed 1; both peaks at `rho = +0.8`)** |
+| Elliptic `E[max Re]` vs `R(1+rho)` | — | **4.193 / 11.974 / 19.622 / 27.332 / 35.500** vs 4/12/20/28/36 (pinned) |
+| Circular-law finite-`S` bias | — | `~ 0.6/S`, slope -0.9279 (slice); **`0.70/S`, slope -1.0086 (re-measured)** |
+| Bias exponent, circular `probe = 0.2 / 0.5 / 0.9` | — | **-0.8814 +- 0.0250 / -1.0274 +- 0.0231 / -0.6189 +- 0.0673** (`S = 25...200`) |
+| Bias exponent, elliptic `rho = -0.8 / +0.8` | — | **-0.7733 +- 0.1472 / -0.8404 +- 0.0150** |
+| Same probe (`0.9`) over `S = 12...96` instead | — | **-0.4307 / -0.3396 / -0.4950** — *a different regime; the range is part of the claim* |
+| Elliptic scaling check, seeds 0-3 | decays | **-0.838 / -0.820 / -0.887 / -0.805**, all pass |
+| Teeth exponents (flipped sign / Hermitian) | ~0 | **+0.008...+0.025 / -0.025...-0.009** — bite at 4/4 seeds |
+| Tooth exponent, wrong `R` | ~0 | **-0.34...-0.42** — does *not* bite the scaling check; moved to the direct probe |
+| `eigvals` cost per draw | `S^3` | 0.018 s (`S=200`), 0.15 s (`400`), **2.0 s (`600`) — 13x for 3.4x FLOPs** |
+| Repressilator floor test, one session, 3 estimators | — | **123.03 / 154.99 s (serial alone) / 189.81 s (in-suite)** — +-30% |
+| Suite after 3b | — | **389 passed in 240.59 s** at `-n 6` (357 before) |
 | Stochastic gLV `D(Omega)` slope | -1/2 | -0.4984 +/- 0.0488 (slice) |
 | Daisyworld `\|rhs(y*)\|` | 0 | <= 3.68e-16 (slice) |
 | Daisyworld `dT_w/dL` | 0 | +0.000e+00 (slice) |
