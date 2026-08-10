@@ -98,18 +98,74 @@ targets — fill them in as each step lands.
 
 ## 3a — generalized Lotka-Volterra
 
-- [ ] `models/glv.py` — gLV RHS on `core/ode.py`; `analytic_predictions` = the
-      closed-form interior equilibrium of a hand-built system. Test first, red
-      first. Remember the **degenerate-SE path**: deterministic, so supply a
-      numerical `sem_floor` and use **two** replicates.
-- [ ] Relaxation rate = leading eigenvalue of `diag(x*) A`, with **Richardson in
-      the amplitude** (error measured linear in `eps`).
-- [ ] `models/lotka_volterra.py` — conserved `V`, the **time-average identity**
-      `<x> = x*` at any amplitude (interpolate the cycle endpoints; that, not the
-      integrator, is the error floor), and the small-oscillation period as an
-      **extrapolated limit** (it grows with amplitude: `9.491/9.805/11.271`).
-- [ ] RK4 order 4 at the **prescribed window `t_max = 5`, `dt in [0.125,
-      0.03125]`** — never `t_max = 20`.
+- [x] **`models/glv.py`** — gLV RHS on `core/ode.py`; `analytic_predictions` = the
+      closed-form interior equilibrium. **The `A` convention was pinned against the
+      slice's recorded numbers before the module was written**: row-major
+      `A_ij` = effect of `j` on `i` reproduces `x*` and `eig(diag(x*)A)` to all
+      recorded digits, the transpose does not. Two hand-built systems, because the
+      3-species case is *self-consistency only* — the 2-species symmetric closed
+      form `x* = 1/(1+a)`, `eig = x*(-1 -+ a)` (swept at `a = 0, 0.25, 0.5, 0.8`)
+      does **not** come from `-A^{-1}r`, and a hand-written double-loop RHS in the
+      test file is the independent anchor. Degenerate-SE path handled: two
+      replicates, `sem_floor` from Richardson in `dt` — which measures **exactly
+      `0.0`** here (`|rhs(x*)| = 1.9e-16` moves `x* ~ 0.7` by `2e-18`, below the
+      ULP), so the floor falls back to `1e-13` and that check is *structural*;
+      precision lives in the attraction test. **Refuses** on a singular `A`, an
+      infeasible `x*`, an unstable `x*`, and — for the relaxation claim only — a
+      complex slowest pair.
+- [x] **Relaxation rate = slowest eigenvalue of `diag(x*) A`**, Richardson in the
+      amplitude. **The slice's constant does not transfer and this was caught by
+      re-measuring first:** the slice *fitted* `log|x - x*|` over a window and read
+      `3.03e-4` at `eps = 1e-2`; this model's single **endpoint** log-ratio reads
+      `4.27e-3` — 14x larger — and drifts with the horizon (`4.27e-3 / 2.28e-3 /
+      1.52e-3` at `T = 10/20/30`). The `O(eps)` *scaling* transferred (ratios
+      `10.08 / 10.01 / 10.00` per decade), the constant did not, which is exactly
+      why the tolerance is derived at runtime. First order, so the factor is
+      `2|m(eps) - m(eps/2)|`, not Gray-Scott's `4/3`.
+- [x] **`models/lotka_volterra.py`** — conserved `V` through `validate()` at two
+      amplitudes with a **per-amplitude** `sem_floor` (drift `9.3e-15` at `amp=0.4`
+      vs `1.6e-11` at `amp=4.0`, a factor of 1670 at identical `dt`), the
+      time-average identity `<x> = x*` at `amp = 0.4/1.2/4.0`, and the period as an
+      extrapolated limit. **The plan's amplitude probes were wrong for this claim**
+      — see the next entry.
+- [x] RK4 order 4 at the prescribed window `t_max = 5`, `dt in [0.125, 0.03125]`:
+      **16.42 / 16.17 / 16.08**, converging on 16 from above.
+- [x] **Both models mutation-checked, 13 mutants, all red.** gLV: transpose `A` in
+      the RHS only (9 tests), transpose it **everywhere** (6 — and
+      `test_validate_reproduces_the_equilibrium` **passes** under it, which is the
+      measured proof that the hand-written loop is load-bearing rather than
+      decorative), drop the `x_i` prefactor (6), seed the fastest mode instead of
+      the slowest (4), drop each of the three guards (1 each). LV: swap
+      `beta`/`delta` (10), sign-slip `V` (4), wrong closed-form period (1), swap the
+      fixed-point components (8), plus two **test-side** mutants — grid-snapped
+      crossings instead of interpolated (4) and an order-4 extrapolant instead of
+      order-2 (1) — confirming the interpolation and the extrapolation order are
+      themselves load-bearing.
+
+### Two more recorded numbers that did not survive re-measurement
+
+Besides the relaxation constant above, two others. All three were caught by
+measuring *before* writing the tolerance, and none is a defect in the slice —
+they are places where the slice did not record the convention its numbers
+depended on. **Only the scaling travels; the constant does not.**
+
+- **The plan's `t_max = 20` order-4 trap did not reproduce.** The plan warns it
+  reads `65.89 / 5.76 / 12.65 / 15.09` — noise from an error collapsed to
+  roundoff. From `x_init = (0.1, 0.1, 0.1)` with a max-norm error against a
+  `dt = 1e-3` reference it reads **`15.18 / 15.59 / 15.80`**, a perfectly
+  measurable approach to 16. The trap depends on the initial condition and the
+  error norm, neither of which the slice recorded. `t_max = 5` is used anyway, on
+  its own merits: three orders more error (`3.8e-6` vs `2.2e-9`) and ratios
+  closer to 16, so it is unambiguously inside the asymptotic regime.
+- **The LV period probes `amp = 1.2 / 2.0 / 4.0` are outside the asymptotic
+  regime**, and the plan's amplitude scale is not this model's. `amp` is now
+  *defined* as the initial displacement in `x` with `y` at `y*`; on that scale the
+  slice's `9.4913` occurs at `amp = 0.8` and its `9.8053` at `amp = 4.0`, so the
+  two scales are not related by any constant factor. Re-measured, `excess/amp^2`
+  runs `0.033360 / 0.033087 / 0.032558 / 0.031555` at `amp = 0.05 / 0.1 / 0.2 /
+  0.4` — converging — against `0.0282 / 0.0255 / 0.0208` at the plan's probes,
+  which are nowhere near constant. **An extrapolation fitted to the plan's three
+  points would not have been measuring a limit.**
 
 ## 3b — the random community matrix
 
@@ -184,8 +240,16 @@ targets — fill them in as each step lands.
 | Item | Target | Measured |
 |---|---|---|
 | Suite baseline before Phase 3, clean, `-n 6` | — | 203.46 / 232.18 s (floor test 162.17 s) |
-| gLV RK4 order | 4 | 17.02 / 16.54 / 16.28 (slice) |
-| gLV relaxation vs leading eigenvalue | `O(eps)` | 3.03e-4 / 3.01e-5 / 3.01e-6 (slice) |
+| gLV RK4 order, `t_max = 5` | 4 | 17.02 / 16.54 / 16.28 (slice); **16.42 / 16.17 / 16.08 (built)** |
+| gLV RK4 order, `t_max = 20` | noise | 65.89 / 5.76 / 12.65 / 15.09 (slice); **15.18 / 15.59 / 15.80 (built) — did not reproduce** |
+| gLV relaxation vs slowest eigenvalue | `O(eps)` | 3.03e-4 / 3.01e-5 / 3.01e-6 (slice, *fitted window*); **4.27e-3 / 4.24e-4 / 4.24e-5 / 4.23e-6 (built, *endpoint ratio*)** |
+| gLV relaxation: Richardson-predicted / true error | 1 | **0.9954 / 0.9977 / 0.9991 / 0.9995** at `eps = 1e-2 / 5e-3 / 2e-3 / 1e-3` |
+| gLV `validate()` Richardson-in-`dt` bound | — | **exactly 0.0** (`x*` sits below the ULP of its own drift) |
+| LV period excess / `amp^2` | const as `amp -> 0` | **0.033360 / 0.033087 / 0.032558 / 0.031555** at `amp = 0.05 / 0.1 / 0.2 / 0.4` |
+| LV amplitude-extrapolated period vs closed form | 0 | **5.35e-5 / 7.06e-6 / 9.08e-7** for `a = 0.4 / 0.2 / 0.1` (residual ratio ~7.6) |
+| LV `V` drift over `t = 100` at `dt = 0.01` | 0 | **9.3e-15** (`amp = 0.4`), **1.6e-11** (`amp = 4.0`) |
+| LV cycle average `\|<x> - x*\|` at `dt = 2.5e-3` | 0 | **3.2e-10 / 3.7e-9 / 4.0e-8** at `amp = 0.4 / 1.2 / 4.0` |
+| 3a mutants confirmed red | all | **13 / 13** (11 model-side, 2 test-side) |
 | Circular-law fraction, `z` | < 4 | <= 1.38 (slice) |
 | Elliptic-law fraction, `z` | < 4 | <= 2.31 (slice) |
 | Circular-law finite-`S` bias | — | `~ 0.6/S`, slope -0.9279 (slice) |

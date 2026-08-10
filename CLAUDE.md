@@ -188,4 +188,39 @@ pins `T_w, T_b = T_opt -+ delta` with `delta` from a cubic in `q` alone, so
 **independent of luminosity** — `dT_w/dL` measured *exactly* `0`, and `dT_e/dL` is
 *negative*, i.e. overcompensation rather than mere flattening.
 
-Next: implement 3a. See `docs/plans/phase3-tasks.md`.
+**3a is built** — `glv` and `lotka_volterra`, 47 tests in ~6 s. gLV carries the
+interior equilibrium (validated on *two* hand-built systems, because the 3-species
+case is self-consistency only and the 2-species symmetric closed form
+`x* = 1/(1+a)` is not), the community matrix `diag(x*)A` checked signed against
+central differences, and the relaxation rate as an `O(eps)` limit. It **refuses**
+on a singular `A`, an infeasible `x*`, an unstable `x*`, and — for the relaxation
+claim alone — a complex slowest pair. `lotka_volterra` is the project's only
+deterministic model validated **on the orbit**: conserved `V` far from any fixed
+point, `<x> = x*` across a 10x amplitude range, and the small-oscillation period
+as an extrapolated limit.
+
+**Two recorded numbers did not survive re-measurement, and measuring first is
+what caught them.** The relaxation constant: the slice *fitted* `log|x - x*|`
+over a window (`3.03e-4` at `eps = 1e-2`), this model takes a single **endpoint**
+log-ratio (`4.27e-3`, and drifting with the horizon). The `O(eps)` *scaling*
+transferred; the constant did not. And the LV period probes `amp = 1.2/2.0/4.0`
+are **outside the asymptotic regime** — `excess/amp^2` runs `0.0282/0.0255/0.0208`
+there but `0.03336/0.03309/0.03256/0.03156` at `amp = 0.05...0.4`, so an
+extrapolation fitted to the plan's points would not have been measuring a limit.
+Separately, the plan's `t_max = 20` order-4 trap **did not reproduce** (15.18/
+15.59/15.80, not 65.89/5.76/12.65/15.09): it depends on the initial condition and
+error norm, which the slice did not record. **A number is only transferable
+together with the estimator that produced it.**
+
+Richardson in the amplitude for the fourth and fifth time (HH transient,
+Gray-Scott linearization, now gLV relaxation and the LV period). gLV's is *first*
+order, so the factor is `2|m(eps) - m(eps/2)|`, not `4/3` — and it predicts the
+true error to a ratio of `0.9954 ... 0.9995`.
+
+All 13 3a mutants confirmed red, including two **test-side** ones. The one worth
+carrying: transposing `A` **everywhere** leaves `test_validate_reproduces_the_
+equilibrium` green, because a consistently transposed system still has a genuine
+fixed point. Only the hand-written double-loop RHS catches it.
+
+Next: implement 3b (`core/random_matrix.py` — **not** a `Model`). See
+`docs/plans/phase3-tasks.md`.

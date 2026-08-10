@@ -16,6 +16,7 @@ from sandbox.models import (
     hh_voltage_clamp,  # noqa: F401  (import triggers registration)
     hodgkin_huxley,  # noqa: F401  (import triggers registration)
     isomerization,  # noqa: F401  (import triggers registration)
+    lotka_volterra,  # noqa: F401  (import triggers registration)
     repressilator,  # noqa: F401  (import triggers registration)
     wright_fisher,  # noqa: F401  (import triggers registration)
 )
@@ -38,6 +39,7 @@ from sandbox.models.isomerization import (
     IsomerizationParams,
     IsomerizationState,
 )
+from sandbox.models.lotka_volterra import LotkaVolterra, LVParams, LVState
 from sandbox.models.repressilator import (
     Repressilator,
     RepressilatorParams,
@@ -67,6 +69,9 @@ __all__ = [
     "Isomerization",
     "IsomerizationParams",
     "IsomerizationState",
+    "LVParams",
+    "LVState",
+    "LotkaVolterra",
     "Repressilator",
     "RepressilatorParams",
     "RepressilatorState",
