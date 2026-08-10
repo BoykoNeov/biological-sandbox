@@ -76,7 +76,11 @@ headline — no `analytic_predictions`, validated by `convergence_report` at slo
 
 **Phase 2 complete** — Hodgkin-Huxley (2a) and Gray-Scott (2b). See
 `docs/plans/phase2-{plan,context,tasks}.md`; the tasks doc carries every measured
-number. Suite **310 passed in 130 s at `-n 6`**.
+number. Suite **310 passed**, in 130 s at `-n 6` when Phase 2 closed — but that
+figure **does not travel**: re-timed clean on 2026-08-10 the same suite takes
+**203-232 s** with the repressilator floor test at **162 s** against its recorded
+122 s, i.e. the machine is ~1.33x slower and nothing regressed. **Always re-time in
+the same session before comparing.**
 
 Two decisions shaped the phase. First, **three categories of checkable claim** —
 *A* exact analytic (`analytic_predictions`), *B* asymptotic law (log-log slope +

@@ -406,6 +406,13 @@ comparing `|closed|` to `|fd|` would have passed. **Compare signed values.**
   the *prefactor* is **not** universal — it is `log(threshold / seed amplitude)`,
   so it moves with the detection threshold; **the exponent is the claim, the
   constant is not.**
+
+  **The 1.2% is at the edge of what this measurement can resolve.** The slice
+  tested for a gap every 200 steps at `dt = 0.5`, so `t_branch` is quantized to
+  100 time units — every value above ends in `.5`, and at `sa = 0.60` the
+  `3200.5` carries `+-50`, i.e. **`+-1.6%`**. The slope across a 16x range is
+  robust to that; a tolerance of "constant to 1.2%" would be **asserting below its
+  own resolution**. Shrink the check interval, or derive the tolerance from it.
 - **Not claimed — the number and positions of the post-branching morphs.**
   Measured grid-dependent: the two morphs sit at `+-0.100`, `+-0.050`, `+-0.025`
   for `ngrid = 81, 161, 321` — always exactly one grid spacing either side of the
@@ -457,6 +464,13 @@ time in this project** — HH's transient, Gray-Scott's linearization, and now a
 mutation-step limit. The instrument generalizes; reach for it whenever the claim is
 a limit rather than an identity.
 
+**But "consistent with" is not "measured", and this document will not blur them.**
+Those two ratios come from low-replicate points, only `sm = 0.0125` carries 1200
+replicates, and the `sm = 0.025` point is non-monotone. The `O(sm)` law is
+therefore **open on exactly the same terms as the `O(1/Omega)` bias above** — step
+16 re-measures it at 1200-reps-equivalent across at least three `sm` (~30 s of
+compute) *before* the test that asserts it is written.
+
 **The teeth are verified, and they bite hard** (1200 replicates, `z = 4`
 tolerance = 0.006902):
 
@@ -485,10 +499,30 @@ Nothing in this phase is a plausible bottleneck, and no dependency is added:
   **it must be re-timed, not assumed** — and `sa = 0.95` was the point that needed
   the long horizon, so trimming the horizon trims the sign change.
 
-**The baseline must be re-measured on a quiet machine before any of these are
-compared to it.** The one run taken this session (`310 passed in 365.51s`) is
-**invalid** — a slice script was running concurrently against the same cores. The
-recorded figure is 130 s at `-n 6`.
+### The recorded 130 s figure is not comparable — re-measured
+
+Three runs this session, at `-n 6`:
+
+| run | total | note |
+|---|---|---|
+| with a slice script on the same cores | 365.51 s | **invalid**, discard |
+| clean | 232.18 s | |
+| clean, `--durations=8` | 203.46 s | |
+
+So run-to-run variance is **~14%**, and `--durations` says why the total moved:
+the repressilator floor test now costs **162.17 s** against the **122 s** recorded
+in Phase 2. **The machine is roughly 1.33x slower than when the 130 s figure was
+taken; nothing regressed.** The next four entries scale similarly (repressilator
+`Omega^2` tooth 130.45 s, HH channel-noise slope 39.17 s, repressilator fixed-`Omega`
+tooth 34.78 s).
+
+**The consequence for every budget claim in this document: state it relatively, not
+absolutely.** All of the Phase-3 slice timings (stochastic gLV 15.6 s,
+11.8 us/event, ~65 s of branching runs, 8.95 s per `S = 400` eigenvalue batch) were
+taken on **this** machine in **this** session, so they are directly comparable to
+the 203-232 s total and the 162 s floor — but *not* to the recorded 130 s. Treat
+"an eighth of the repressilator floor" as the durable statement and the absolute
+seconds as machine-dependent.
 
 ---
 

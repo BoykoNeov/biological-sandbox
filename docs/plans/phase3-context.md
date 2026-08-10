@@ -10,7 +10,7 @@ the traps.
 |---|---|---|
 | Generalized Lotka-Volterra (deterministic) | `src/sandbox/models/glv.py` | new |
 | LV predator-prey exact invariants | `src/sandbox/models/lotka_volterra.py` | new |
-| May / Allesina-Tang random community matrix | `src/sandbox/core/random_matrix.py` | new |
+| May / Allesina-Tang random community matrix | `src/sandbox/core/random_matrix.py` | new, **not a Model** |
 | Demographic-noise gLV (Gillespie) | `src/sandbox/models/glv_stochastic.py` | new |
 | Daisyworld | `src/sandbox/models/daisyworld.py` | new |
 | Adaptive dynamics / evolutionary branching | `src/sandbox/models/adaptive_dynamics.py` | new |
@@ -60,6 +60,15 @@ category C never enters `analytic_predictions`). Phase-3 additions:
   stochasticity every replicate returns the identical value, so `sem = 0`. Supply
   a numerical `sem_floor` **and use two replicates** — one replicate gives
   `sem = inf` and the check passes vacuously.
+- **The random-matrix track is NOT a Model, and must not be made into one.** A
+  matrix ensemble has no `step`, no `observables` and no `state.t`; contriving a
+  `Model` whose `step` draws a matrix would be exactly the protocol abuse
+  non-negotiable #1 exists to prevent. It is a **plain pytest with a binomial-SE
+  tolerance, outside the `ValidationSuite` path**, and it lives in `core/` because
+  it is a shared numerical fact rather than a model — defensible on the same narrow
+  grounds as the viz-only `FieldModel`. So the "register in `models/__init__.py`"
+  contract below applies to `glv`, `lotka_volterra`, `glv_stochastic`,
+  `daisyworld` and `adaptive_dynamics` — **not** to `core/random_matrix.py`.
 - **A fourth time-advance discipline is NOT introduced.** gLV, Daisyworld and the
   adaptive-dynamics trait grid are all fixed-`dt` RK4 models, exactly like Phase
   2's. The trait-substitution sequence *is* new (an event-driven jump process with
@@ -185,9 +194,14 @@ where it is largest**, because the SSA's fluctuations grow faster than the bias 
 - `uv` venv; numpy 2.x; matplotlib only under `--extra viz`; **no scipy** (RK4 is
   hand-rolled and measured sufficient again here — gLV and Daisyworld are both
   non-stiff).
-- Suite baseline: see `phase3-tasks.md` for the clean re-time. **A run taken with a
-  slice script on the same cores read `310 passed in 365.51s` against a recorded
-  130 s — never time the suite against a busy machine.**
+- **Suite baseline: 203-232 s at `-n 6` on this machine** (two clean runs; ~14%
+  run-to-run variance). The **recorded 130 s is not comparable** — `--durations`
+  shows the repressilator floor test at **162.17 s** against the 122 s recorded in
+  Phase 2, i.e. the machine is ~1.33x slower, not that anything regressed. A third
+  run, taken with a slice script on the same cores, read `365.51s` and is invalid:
+  **never time the suite against a busy machine.** Every Phase-3 slice timing is
+  same-machine as the 203-232 s runs, so *relative* budget claims hold and absolute
+  seconds do not travel.
 - Teeth tests must be **verified across 3-4 seeds**, and assert only the leg that is
   *structurally* robust for that break.
 - Any optimization must be **bit-identical**, fingerprinted (`sha256` of

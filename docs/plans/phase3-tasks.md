@@ -84,9 +84,17 @@ targets — fill them in as each step lands.
       because the SSA's fluctuations grow faster than the bias as `Omega` falls
       (`<x> = 0.427` vs `x* = 0.667` at `Omega = 25`). **The bias cannot be
       measured where it is largest.** Open item — see 3c step 9.
-- [x] **Suite baseline re-timed clean.** A run taken with a slice script on the
-      same cores read `310 passed in 365.51s` against a recorded 130 s. **Never
-      time the suite against a busy machine.** Clean figure: see below.
+- [x] **Suite baseline re-timed clean — and the recorded 130 s is not
+      comparable.** Three runs: `365.51s` **with a slice script on the same cores**
+      (invalid — never time the suite against a busy machine), then clean runs of
+      `232.18s` and `203.46s` (**~14% run-to-run variance**). `--durations=8` says
+      why: the repressilator floor test now costs **162.17s** against the **122 s**
+      recorded in Phase 2, so **the machine is ~1.33x slower and nothing
+      regressed**. Runners-up: repressilator `Omega^2` tooth 130.45s, HH
+      channel-noise slope 39.17s, repressilator fixed-`Omega` tooth 34.78s,
+      birth-death slopes 31.63s / 25.89s. **All Phase-3 slice timings are
+      same-machine as these, so relative claims hold and absolute seconds do
+      not travel.**
 
 ## 3a — generalized Lotka-Volterra
 
@@ -107,7 +115,10 @@ targets — fill them in as each step lands.
 
 - [ ] `core/random_matrix.py` — May/elliptic ensemble; circular- and elliptic-law
       fraction checks with **binomial** SE and `S` **derived** from
-      `0.6/S << SE(n)`.
+      `0.6/S << SE(n)`. **NOT a `Model`** — no `step`, no `observables`, no
+      `state.t`; a plain pytest outside the `ValidationSuite` path, not registered
+      in `models/__init__.py`. Do not contrive a `Model` whose `step` draws a
+      matrix.
 - [ ] Teeth: wrong `R`, wrong `rho` sign, a Hermitian-ized draw. Verify across 3-4
       seeds; assert only the structurally robust leg.
 - [ ] Demo reports the `P(stable)` transition and its sharpening — **reported, not
@@ -142,7 +153,20 @@ targets — fill them in as each step lands.
 - [ ] Branch/no-branch sign change across `sa = sK` with the **gap** criterion and
       the measured horizons (`sa = 0.95` needs `t = 200 000`).
 - [ ] `t_branch * rate = const` (slope `-1.0003`) — assert **the exponent, not the
-      prefactor** (`log(threshold/seed)`, not universal).
+      prefactor** (`log(threshold/seed)`, not universal). **Fix the detection
+      resolution first:** the slice checked for a gap every 200 steps at
+      `dt = 0.5`, quantizing `t_branch` to 100 time units (every measured value
+      ends in `.5`), so at `sa = 0.60` the `3200.5` carries **+-1.6%** while the
+      product is reported constant to 1.2%. **Asserting 1.2% would be asserting
+      below the measurement's own resolution** — the "threshold nothing can fail"
+      discipline pointed the other way. Either shrink the check interval or derive
+      the tolerance from it.
+- [ ] **Re-measure the `sm` sweep at 1200-reps-equivalent across at least three
+      `sm` BEFORE writing the test** (~30 s of compute). The `O(sm)` claim is
+      currently *consistent with* the data, not measured: ratios `2.15` and `2.19`
+      come from low-replicate points, only `sm = 0.0125` has 1200 reps, and the
+      `sm = 0.025` point is non-monotone. Treat it exactly like the `O(1/Omega)`
+      bias — **open until measured**.
 - [ ] Canonical equation as an **`O(sm)` vanishing discrepancy**, not a single-`sm`
       tolerance — a tolerance at one `sm` was measured to tighten onto a real
       `+0.004` bias and would fail a correct model as replicates grow.
@@ -159,7 +183,7 @@ targets — fill them in as each step lands.
 
 | Item | Target | Measured |
 |---|---|---|
-| Suite baseline before Phase 3, clean, `-n 6` | — | *(see below)* |
+| Suite baseline before Phase 3, clean, `-n 6` | — | 203.46 / 232.18 s (floor test 162.17 s) |
 | gLV RK4 order | 4 | 17.02 / 16.54 / 16.28 (slice) |
 | gLV relaxation vs leading eigenvalue | `O(eps)` | 3.03e-4 / 3.01e-5 / 3.01e-6 (slice) |
 | Circular-law fraction, `z` | < 4 | <= 1.38 (slice) |
@@ -170,4 +194,4 @@ targets — fill them in as each step lands.
 | Daisyworld `dT_w/dL` | 0 | +0.000e+00 (slice) |
 | Adaptive-dynamics derivatives vs FD | 0 | <= 7.6e-8 (slice) |
 | `t_branch * rate` log-log slope | -1 | -1.0003 (slice) |
-| Suite after Phase 3, `-n 6` | < 130 s + new | *(pending)* |
+| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending)* |
