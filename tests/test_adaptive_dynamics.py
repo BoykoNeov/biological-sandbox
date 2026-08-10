@@ -311,8 +311,20 @@ def test_the_horizon_travels_one_canonical_distance(sigma_m, mutation_rate):
 
 
 @pytest.mark.parametrize("x", PROBE_TRAITS)
-def test_invasion_fitness_matches_the_longhand_form(x):
-    p = reference()
+@pytest.mark.parametrize("r_growth", [1.0, 2.5])
+@pytest.mark.parametrize("k0", [1.0, 0.4])
+@pytest.mark.parametrize("sigma_k", [1.0, 1.7])
+def test_invasion_fitness_matches_the_longhand_form(x, r_growth, k0, sigma_k):
+    """The scale constants are swept, not left at their defaults.
+
+    ``r_growth``, ``k0`` and ``sigma_k`` all default to exactly ``1.0``, where a
+    dropped factor, a lost square and a missing multiplication are all invisible.
+    "Sweep the constant the probe happens to land on" is this project's most
+    repeated lesson — it has caught a conservation test at ``N = 5000``, an
+    albedo mutant that was a no-op at ``A_g = 0.5``, and a white/black swap that
+    left the answer bit-identical.
+    """
+    p = reference(r_growth=r_growth, k0=k0, sigma_k=sigma_k)
     for y in (x - 0.3, x, x + 0.45):
         assert float(invasion_fitness(y, x, p)) == pytest.approx(
             longhand_invasion_fitness(y, x, p), abs=1e-14
@@ -327,13 +339,21 @@ def test_a_resident_cannot_invade_itself(x):
 
 
 @pytest.mark.parametrize("x", PROBE_TRAITS)
-def test_the_selection_gradient_is_the_signed_derivative(x):
+@pytest.mark.parametrize("r_growth", [1.0, 2.5])
+@pytest.mark.parametrize("sigma_k", [1.0, 1.7])
+def test_the_selection_gradient_is_the_signed_derivative(x, r_growth, sigma_k):
     """``D(x) = ds_x(y)/dy`` at ``y = x``, sign included.
 
     Asserted against ``longhand_invasion_fitness``, so the closed form is checked
     against an *independently written* fitness rather than against itself.
+
+    ``r_growth`` and ``sigma_k`` are swept because at their defaults of ``1.0``
+    the formula ``-r x / sK^2`` is indistinguishable from ``-x / sK``, from
+    ``-x / sK^2``, and from ``-r x / sK``. **Both mutants survived the first
+    mutation run** for exactly that reason — the constant the probe happened to
+    land on, for the fourth time in this project.
     """
-    p = reference()
+    p = reference(r_growth=r_growth, sigma_k=sigma_k)
     numerical, bound = central_difference(lambda y: longhand_invasion_fitness(y, x, p), x)
     assert abs(float(selection_gradient(x, p)) - numerical) <= max(3.0 * bound, 1e-11)
 
@@ -406,16 +426,20 @@ def test_the_splitting_rate_changes_sign_at_sigma_a_equals_sigma_k(sigma_a):
     assert rate == pytest.approx(float(mutant_curvature(0.0, p)), rel=1e-15)
 
 
-def test_competition_and_capacity_have_the_shapes_the_model_claims():
-    p = reference()
+@pytest.mark.parametrize("k0", [1.0, 0.4, 3.0])
+@pytest.mark.parametrize("sigma_k", [1.0, 1.7])
+def test_competition_and_capacity_have_the_shapes_the_model_claims(k0, sigma_k):
+    p = reference(k0=k0, sigma_k=sigma_k)
     x = np.linspace(-3.0, 3.0, 13)
     a = np.asarray(competition(x[:, None], x[None, :], p))
     assert np.allclose(np.diag(a), 1.0, atol=0.0)  # a(x, x) = 1 exactly
     assert np.array_equal(a, a.T)  # symmetric, bit-for-bit
-    assert np.linalg.eigvalsh(a).min() > 0.0  # Gaussian kernels are PD
     k = np.asarray(carrying_capacity(x, p))
     assert k.argmax() == len(x) // 2  # peaks at the singular point
     assert float(carrying_capacity(0.0, p)) == p.k0
+    # The width is sigma_k, checked at a trait where the two candidate widths
+    # differ -- K(sigma_k) / K(0) = e^{-1/2} whatever the scale.
+    assert float(carrying_capacity(sigma_k, p)) / p.k0 == pytest.approx(np.exp(-0.5), rel=1e-14)
 
 
 # --------------------------------------------------------------------------

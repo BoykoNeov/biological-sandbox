@@ -368,6 +368,13 @@ def run_cohort(params: AdaptiveDynamicsParams, rng: Generator, n_rep: int) -> Co
 
         n_events += live.size
         delta = rng.standard_normal(live.size) * params.sigma_m
+        # The clip is documentary, not operative, and mutation testing proved it:
+        # deleting it is the one mutant of 33 that survives. `rng.random()` lives
+        # in [0, 1), so `random() < p` is False for every p <= 0 whether p is zero
+        # or negative -- same outcome, same draws, bit-identical trajectory. It
+        # stays because `p_fix` is reported as a probability (`max_fixation_
+        # probability`, `frac_saturated`) and a negative one would be a lie about
+        # the quantity, not merely a harmless value.
         p_fix = np.maximum(
             0.0, invasion_fitness(x[live] + delta, x[live], params) / params.r_growth
         )

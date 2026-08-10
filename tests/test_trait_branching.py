@@ -386,12 +386,25 @@ def test_refinement_locates_the_branch_more_precisely_than_the_checkpoint():
     """
     p = reference(sigma_a=0.6, t_max=120_000.0)
     result = find_branch_time(p)
-    assert result.branched
-    assert result.t_refined <= result.t_coarse
     quantum = p.check_interval * p.dt
-    assert result.t_coarse - result.t_refined < quantum
+    assert result.branched
     assert result.t_coarse % quantum == 0.0
+    assert result.t_coarse - result.t_refined < quantum
     assert result.refine_steps < p.check_interval
+
+    # Refinement must have *moved* the answer, not merely been available. A
+    # mutant that returned the coarse checkpoint unchanged passed the three
+    # assertions above -- `t_refined == t_coarse` satisfies "within one quantum"
+    # and "fewer than check_interval steps" perfectly. A threshold nothing can
+    # fail is not a check, and this one was caught by mutation testing rather
+    # than by reading. At sigma_a = 0.6 the gap opens 47 time units before the
+    # checkpoint, so the refined answer is strictly inside the interval and off
+    # the coarse grid; a branch that happened to open exactly on a checkpoint
+    # would legitimately give t_refined == t_coarse, which is why this is
+    # asserted at a measured sigma_a rather than swept.
+    assert result.t_refined < result.t_coarse
+    assert result.refine_steps > 0
+    assert result.t_refined % quantum != 0.0
 
 
 # --------------------------------------------------------------------------
