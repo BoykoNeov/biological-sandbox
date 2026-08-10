@@ -282,5 +282,70 @@ measured three times in one session — `123.03` and `154.99 s` serial-and-alone
 to detect, and across three different estimators besides. **Bracket any suite-timing
 claim on this machine by `+-30%` or it is noise.**
 
-Next: implement 3c (`models/glv_stochastic.py`), and close or explicitly label the
-`O(1/Omega)` bias. See `docs/plans/phase3-tasks.md`.
+**3c is built** — `models/glv_stochastic.py` (`S` births + `S^2` losses on the
+Phase-1 Gillespie engine, one `rates(c)` driving both the propensities and
+`deterministic_rhs`), `demos/glv_stochastic.py`, 21 tests. `D(Omega) ~
+Omega^{-1/2}` at `-0.4952 / -0.5134 / -0.4960 / -0.5228` over seeds 0-3, with a
+fixed-`Omega` and a sqrt-`Omega` tooth. **The phase's one open item is closed.**
+
+**The `O(1/Omega)` bias, and why the plan's number was not wrong so much as
+under-generalized.** `bias = (-A)^-1 diag|A_ii| 1 / Omega`; the plan's `x*/Omega`
+is that formula specialized to `diag|A_ii| 1 = r`, true of its symmetric
+2-species reference and false of 3a's asymmetric one. Closing it needed a
+**split-coupled** estimator (Anderson 2012): the macro arm *is* the exact arm plus
+`S` extra loss channels, so both run as ONE chain — shared channel `min(aE, aM)`
+plus E-only and M-only — for about one arm's events. At equal cost the SE is
+`6.208e-3` independent, `1.357e-3` CRN, `9.247e-4` coupled (**6.7x**), and the
+estimator's own tooth is exact: run both arms under the same rule and the
+difference is **bit-for-bit `0.0`** over 25510 and 99478 events. Recorded slopes
+`-1.0525 +- 0.0624 / -0.9945 +- 0.0870 / -0.8522 +- 0.1378`, all within 1.1 sigma
+of `-1` and **2.6-8.9 sigma from `-1/2`** — which is the claim that matters, since
+subdominance is what stops the bias flooring the slope above. And the 3a finding
+**survives the better instrument**: at `Omega = 50` even `T = 500` coupled reads
+`-7.19e-4 +- 1.13e-2`. A 6.7x variance reduction moves that boundary; it does not
+remove it.
+
+**The assertion was about to ship green for the wrong reason — the phase's seventh
+such test, and the first where the flaw was in *which component* was measured.**
+It reported `z` against the prediction and `z` against zero, neither of which any
+competitor formula can fail. There are three near-misses — drop the `(-A)^-1`
+linear-response solve, transpose `A`, or use `x*/Omega` — and **two of the three
+are invisible on species 0, the component every earlier measurement in the phase
+had reported** (`-1.7%` and `+1.0%` off there, against `-43%/+57%` and `-35%/+60%`
+on species 1 and 2). Excluding the transpose on species 0 alone needs
+`SE <= 2.4e-5`, unreachable; on species 1 and 2 it needs `~6e-4`, which is
+affordable. The shipped test asserts the **whole vector** and rejects both wrong
+formulas from **one** measurement (three test functions would have xdist rebuild
+it three times). Its config was seed-verified at 4 sets and its threshold placed in
+a measured gap: at `Omega = 100, T = 400, R = 8` the correct vector's worst `|z|`
+is `1.418` and the best tooth is `4.780`, so `z = 3` sits 2.12x above one and 1.59x
+below the other. **`T = 200` was rejected for being seed-lucky** — it clears the
+transpose tooth by 0.8% on one seed-set of four.
+
+**A third instance of "significance is free when the residuals are small", now on
+the fit itself.** The recorded slope SEs were **residual-only**: 3 points, 1 dof,
+no per-point error propagated. Species 1 read `+-0.0133` where weighted least
+squares gives `+-0.0870` (**6.5x**), and species 2's `-0.8335 +- 0.0372` — a
+4.5-sigma "subleading correction" — became `-0.8522 +- 0.1378`, **1.1 sigma from
+`-1`**. `chi2/dof` of `0.03-0.28` is the tell: residuals far *smaller* than the
+points' own error bars. Caught before it was written down, and it would have put a
+physical effect that does not exist into two docs.
+
+**The demo caught a fourth wrong figure-claim, in prose this time**: act 4(c)
+asserted all three wrong formulas sit within 2% at species 0, and printing the
+table showed the no-solve formula is **+44%** off there. Only the two
+*structurally* similar errors are invisible. Fixed in the demo, the figure title
+and the test docstring.
+
+**The suite timing rule paid off, and the same-session baseline inverted the
+reading.** Suite **410 passed in 453.91 s** at `-n 6` against a recorded 240.59 s —
+which looks alarming until you take the baseline the rule demands: **389 passed in
+544.96 s** with 3c ignored, i.e. the suite is *slower without the new tests*. Since
+21 tests cannot make a suite faster, the whole change is the machine (the
+repressilator floor test, untouched by 3c, reads `287.06 / 318.02 s` this session
+against `189.81 s` recorded in-suite) plus `+-11%` run-to-run spread within the
+session. **3c's cost is below this session's own noise** — a conclusion the `+-30%`
+bracket alone could not have supported.
+
+Next: 3d (`models/daisyworld.py`), then 3e (adaptive dynamics). See
+`docs/plans/phase3-tasks.md`.

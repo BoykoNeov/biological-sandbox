@@ -25,12 +25,25 @@ stochastic and deterministic sides cannot silently disagree about the same
 network — the precise failure that would make a convergence check green yet
 meaningless.
 
-**Scope of exactness (Phase 1).** ``a_j = Omega * f_j(n/Omega)`` is *exact* for
-zeroth- and first-order (unimolecular) reactions, which is all of birth-death and
+**Scope of exactness.** ``a_j = Omega * f_j(n/Omega)`` is *exact* for zeroth- and
+first-order (unimolecular) reactions, which is all of birth-death and
 isomerization — so their exact stationary closed forms hold and ``validate()``
-checks them honestly. Bimolecular reactions would need the combinatorial
-correction (``n(n-1)/2`` vs ``Omega*(n/Omega)**2/2``, differing at ``O(1/Omega)``)
-and are **not** used in Phase 1.
+checks them honestly. A bimolecular reaction would need the combinatorial
+correction (``n(n-1)`` vs ``Omega*(n/Omega)**2``, differing at ``O(1/Omega)``),
+which this engine deliberately does **not** apply.
+
+Phase 1 avoided the question by using no bimolecular reactions at all. Phase 3c's
+:mod:`sandbox.models.glv_stochastic` is the first model that engages it, and the
+decision to keep the macroscopic form was taken *with its cost measured*: the
+excess self-limitation rate is ``|A_ii| n_i / Omega``, i.e. an effective
+``r_i' = r_i - |A_ii|/Omega``, so the bias on the stationary mean is
+``O(Omega^{-1})`` — **subdominant** to the ``O(Omega^{-1/2})`` signal the
+convergence pathway measures, and therefore incapable of flooring that slope
+(unlike the ``Omega``-independent floors of Phase 2, which could). Phase 3's plan
+carried that as a derivation with a single supporting point;
+``tests/test_glv_stochastic.py`` closes it with a split-coupled estimator and
+records the measured law. Any *new* model wanting an exact stationary closed form
+from a bimolecular network must revisit this — the correction is not applied here.
 
 **Serializability.** A :class:`ReactionNetwork` carries a Python callable and is
 therefore *not* JSON-serializable. That is fine: it lives only inside the

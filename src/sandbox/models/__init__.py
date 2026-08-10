@@ -11,6 +11,7 @@ from __future__ import annotations
 from sandbox.models import (
     birth_death,  # noqa: F401  (import triggers registration)
     glv,  # noqa: F401  (import triggers registration)
+    glv_stochastic,  # noqa: F401  (import triggers registration)
     gray_scott,  # noqa: F401  (import triggers registration)
     hh_stochastic,  # noqa: F401  (import triggers registration)
     hh_voltage_clamp,  # noqa: F401  (import triggers registration)
@@ -22,6 +23,11 @@ from sandbox.models import (
 )
 from sandbox.models.birth_death import BirthDeath, BirthDeathParams, BirthDeathState
 from sandbox.models.glv import GLV, GLVParams, GLVState
+from sandbox.models.glv_stochastic import (
+    GLVStochastic,
+    GLVStochasticParams,
+    GLVStochasticState,
+)
 from sandbox.models.gray_scott import GrayScott, GrayScottParams, GrayScottState
 from sandbox.models.hh_stochastic import (
     HHStochastic,
@@ -54,6 +60,9 @@ __all__ = [
     "GLV",
     "GLVParams",
     "GLVState",
+    "GLVStochastic",
+    "GLVStochasticParams",
+    "GLVStochasticState",
     "GrayScott",
     "GrayScottParams",
     "GrayScottState",

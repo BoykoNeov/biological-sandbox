@@ -84,6 +84,13 @@ targets — fill them in as each step lands.
       because the SSA's fluctuations grow faster than the bias as `Omega` falls
       (`<x> = 0.427` vs `x* = 0.667` at `Omega = 25`). **The bias cannot be
       measured where it is largest.** Open item — see 3c step 9.
+      > **Closed in 3c, and the formula above needed generalizing first.**
+      > `x*/Omega` is not a separate derivation — it is `(-A)^-1 diag|A_ii| 1 /
+      > Omega` specialized to a system where `diag|A_ii| 1 = r`, which the plan's
+      > symmetric 2-species reference satisfies and 3a's asymmetric 3-species one
+      > does not (`+1.0% / -35% / +60%` off there). The "cannot be measured where
+      > it is largest" finding **survives the better estimator**: even split-coupled
+      > at `T = 500`, `Omega = 50` is unresolved (`-7.19e-4 +/- 1.13e-2`).
 - [x] **Suite baseline re-timed clean — and the recorded 130 s is not
       comparable.** Three runs: `365.51s` **with a slice script on the same cores**
       (invalid — never time the suite against a busy machine), then clean runs of
@@ -319,13 +326,64 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## 3c — stochastic gLV
 
-- [ ] `models/glv_stochastic.py` on the existing Gillespie engine.
-- [ ] **Close the `O(1/Omega)` bias measurement**, or label it open in the code
-      comment as well as the docs. Needs a variance-reduced estimator (the two arms
-      share a common `O(1/Omega)` nonlinearity bias, which is why differencing is
-      right and comparing either arm to `x*` alone is not) or ~340 s of SSA.
-- [ ] `D(Omega) ~ Omega^{-1/2}` via `core/convergence.py`, `observable_keys`
-      explicit, teeth verified across seeds.
+- [x] **`models/glv_stochastic.py` on the existing Gillespie engine.** `S` birth
+      reactions plus `S^2` loss reactions (flat index `S + i*S + j` decrements
+      species `i`), one `rates(c)` driving both the SSA propensities and
+      `deterministic_rhs = stoich.T @ rates(c)` — so the hand-written double-loop
+      check pins the stoichiometry, the `A` convention **and** which species each
+      loss removes at once. The reference system is 3a's **asymmetric** 3-species
+      one on purpose: under `A = A^T` a transposed convention and a loss charged
+      to `X_j` instead of `X_i` both leave the ODE limit bit-identical, and that
+      blind spot is asserted rather than left implicit. Five refusals; no
+      `analytic_predictions`, with the artifact rather than prose behind the
+      refusal (`<x> = x*` would go red at `R = 229 / 677 / 4429` for
+      `Omega = 100 / 400 / 1600`).
+- [x] **`O(1/Omega)` bias — CLOSED, and the plan's formula needed generalizing.**
+      `bias = (-A)^-1 diag|A_ii| 1 / Omega`; the plan's `x*/Omega` is that same
+      formula specialized to `diag|A_ii| 1 = r`. Estimator: **split coupling**
+      (Anderson 2012 CFD) — the macro arm *is* the exact arm plus `S` extra loss
+      channels, so both run as ONE chain (shared channel `min(aE, aM)`, plus
+      E-only and M-only), costing about one arm's events. At `Omega = 100`,
+      `T = 200`, `R = 8` and equal cost the SE is **6.208e-3 independent /
+      1.357e-3 CRN / 9.247e-4 CFD** (4.6x, 6.7x). Its own tooth: run both arms
+      under the exact rule and the difference is **bit-for-bit `0`** (25510 and
+      99478 events). Recorded at `T = 500`, `R = 8`, `burn = 20`, 488 s: weighted
+      log-log slopes **`-1.0525 +- 0.0624 / -0.9945 +- 0.0870 / -0.8522 +- 0.1378`**
+      (all within 1.1 sigma of `-1`, and 8.9 / 5.7 / 2.6 sigma from `-1/2` — the
+      claim that matters, since it is what stops the bias flooring 3c's slope).
+      Per-component `z` against the prediction never exceeds **1.67**.
+      `burn = 20` and `burn = 50` agree within SE everywhere, so the burn is
+      measured rather than assumed.
+- [x] **`D(Omega) ~ Omega^{-1/2}`** at `omegas = [50, 100, 200, 400, 800]`,
+      `t_max = 20`, `R = 8`, `z = 3`, `observable_keys` explicit. Seeds 0-3:
+      **`-0.4952 / -0.5134 / -0.4960 / -0.5228`**, all pass, `|slope+1/2| / (z SE)`
+      = `0.08 / 0.22 / 0.03 / 0.37`. No `fit_mask` — `D*sqrt(Omega)` is flat
+      (`0.80 / 0.84 / 0.88 / 0.80 / 0.83`) so *every* point is claimed to be in the
+      regime, and that is asserted. Teeth: fixed-`Omega` (slope `+0.0217 / +0.0005
+      / +0.0498 / +0.0029`, 4/4) and sqrt-`Omega` (`-0.2619 / -0.2510 / -0.2598 /
+      -0.2532`, clearing tolerance by `7.86 / 6.63 / 4.99 / 7.72`, 4/4).
+- [x] **Three traps in 3c itself, all green or plausible first:**
+      (1) *The sqrt-`Omega` tooth was seed-lucky*, and its cheap fix bit the wrong
+      thing — raising replicates passed, but at effective size 10 the initial count
+      is 2 molecules/species and **22 of 24 replicates lost a species**, so the
+      tooth was failing through extinction rather than through its exponent.
+      Re-sited to effective sizes `25...400` (nominal `Omega` is free when the SSA
+      runs at `sqrt(Omega)`).
+      (2) *The bias assertion measured species 0 only* — and species 0 is the one
+      component on which **two of the three wrong formulas are invisible**
+      (transposed `A` is `-1.7%` off there, the plan's `x*/Omega` `+1.0%`, against
+      `-43%/+57%` and `-35%/+60%` on species 1 and 2). Excluding the transpose on
+      species 0 needs `SE <= 2.4e-5`, unreachable; on species 1 and 2 it needs
+      `~6e-4`, which the shipped config reaches. **An assertion has to exclude the
+      wrong formulas, not merely be consistent with the right one** — 3b's
+      "significance is free when the residuals are small" one layer up.
+      (3) *The recorded slope SEs were residual-only.* A 3-point fit with 1 dof
+      returns a tiny SE no matter how fat each point's own error bar is: species 1
+      read `+-0.0133` where propagating the per-point SEs gives `+-0.0870`, **6.5x
+      wider**, and species 2's `-0.8335 +- 0.0372` — a 4.5-sigma "subleading
+      correction" — became `-0.8522 +- 0.1378`, **1.1 sigma from `-1`**. Caught
+      before it was written down; it would have put a physical effect that does not
+      exist into this file. `chi2/dof` = `0.28 / 0.03 / 0.05` is the tell.
 
 ## 3d — Daisyworld
 
@@ -413,9 +471,21 @@ depended on. **Only the scaling travels; the constant does not.**
 | `eigvals` cost per draw | `S^3` | 0.018 s (`S=200`), 0.15 s (`400`), **2.0 s (`600`) — 13x for 3.4x FLOPs** |
 | Repressilator floor test, one session, 3 estimators | — | **123.03 / 154.99 s (serial alone) / 189.81 s (in-suite)** — +-30% |
 | Suite after 3b | — | **389 passed in 240.59 s** at `-n 6` (357 before) |
-| Stochastic gLV `D(Omega)` slope | -1/2 | -0.4984 +/- 0.0488 (slice) |
+| Stochastic gLV `D(Omega)` slope | -1/2 | -0.4984 +/- 0.0488 (slice); **-0.4952 / -0.5134 / -0.4960 / -0.5228 (built, seeds 0-3)** |
+| gLV-stochastic bias estimator SE, equal cost | smaller | **6.208e-3 independent / 1.357e-3 CRN / 9.247e-4 split-coupled** (4.6x, 6.7x) |
+| Coupled arms under identical rules | exactly 0 | **bit-for-bit `0.0`** at `Omega = 100` (25510 events) and `400` (99478) |
+| Bias log-log slope, `T = 500` `R = 8`, per species | -1 | **-1.0525 +- 0.0624 / -0.9945 +- 0.0870 / -0.8522 +- 0.1378** (WLS, per-point SEs propagated) |
+| ...the same fit with residual-only SEs | — | `+-0.0423 / +-0.0136 / +-0.0364` — **6.5x too tight on species 1**, and invents a 4.5-sigma effect on species 2 |
+| Bias `z` vs prediction, `Omega = 100/200/400` | < 3 | **<= 1.67** on every component at both burns |
+| Bias at `Omega = 50`, even split-coupled at `T = 500` | — | **-7.19e-4 +- 1.13e-2 — unresolved.** The 3a finding survives the better instrument |
+| Ship config gap, `Omega = 100` `T = 400` `R = 8` | — | correct `<= 1.418`, transpose `>= 4.780`, naive `>= 7.782` (4 seed-sets) — **`z = 3` sits in it** |
+| ...the same at `T = 200` | — | correct `<= 1.675`, transpose `>= 3.025` — **clears `z = 3` by 0.8%; seed-lucky, not shipped** |
+| Wrong-formula error at species 0 / 1 / 2 | — | no-solve `+44/+49/+90%`; transposed `A` **`-1.7%`**`/-43/+57%`; `x*/Omega` **`+1.0%`**`/-35/+60%` |
 | Daisyworld `\|rhs(y*)\|` | 0 | <= 3.68e-16 (slice) |
 | Daisyworld `dT_w/dL` | 0 | +0.000e+00 (slice) |
 | Adaptive-dynamics derivatives vs FD | 0 | <= 7.6e-8 (slice) |
 | `t_branch * rate` log-log slope | -1 | -1.0003 (slice) |
-| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending)* |
+| Suite after 3c, `-n 6` | — | **410 passed in 453.91 s** |
+| ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so 3c's cost is **below this session's noise** |
+| Repressilator floor test, this session | — | **287.06 s** (with 3c) / **318.02 s** (without) vs **189.81 s** recorded in-suite — machine ~1.5-1.7x slower |
+| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending — 3d, 3e)* |
