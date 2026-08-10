@@ -349,6 +349,22 @@ def test_the_pair_equilibrium_refuses_when_a_species_is_excluded():
         pair_equilibrium(reference(initial="pair", sigma_a=6.0))
 
 
+@pytest.mark.parametrize("n_grid", [81, 321])
+def test_the_prefactor_law_refuses_off_the_grid_its_offset_was_fitted_at(n_grid):
+    """Half of :func:`predicted_product` is derived and half is a fitted constant.
+
+    The ``2/h^2`` slope comes from the mechanism and transfers; the offset was
+    fitted at ``h = 0.05`` and does not. Evaluating it at another spacing would
+    return a number wrong in a way nothing downstream could detect — so it raises,
+    the stance ``hodgkin_huxley`` takes past the Hopf and this model takes on a
+    branching run. Nothing in the suite or the demo calls it off-default, which is
+    exactly what makes it worth closing: a landmine, not a live bug.
+    """
+    with pytest.raises(ValueError, match="was fitted at"):
+        predicted_product(reference(n_grid=n_grid))
+    assert predicted_product(reference()) > 0.0  # ...and the fitted grid still works
+
+
 def test_two_traits_that_snap_to_one_bin_are_rejected():
     with pytest.raises(ValueError, match="same bin"):
         # h = 0.2 at n_grid = 41, so both of these snap to the bin at x = 0.4.

@@ -823,7 +823,7 @@ The first run scored **25/33**. Four survivors; two were real gaps.
       **runner bug rather than a survivor**, which is the difference between
       "32/33 red" and a silent 4-mutant blind spot.
 
-### The demo's figure, and the sixth wrong figure-claim caught by looking
+### The demo's figure, and another wrong figure-claim caught by looking
 
 - [x] Panel (c) claimed "the two neighbours rise" while drawing **one line on top
       of the other** — the two morphs are exactly symmetric, so a reader counts two

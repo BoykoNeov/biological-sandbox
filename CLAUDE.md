@@ -586,13 +586,21 @@ stochastic sweep it checks. It is the module default rather than a caller's
 opt-in, because in the measurement phase it was a monkey-patch and a helper that
 must be *remembered* to be cheap will drift back.
 
-**The demo caught the project's sixth wrong figure-claim, and this one stated
-nothing false.** Panel (c) said "the two neighbours rise" while drawing one line
-exactly on top of the other — the morphs are bit-identically symmetric, so a
-reader counts two curves under a title claiming three. Naming the coincidence in
-the legend turns the overlap into a result. Panel (b)'s axis said "|mean -
-canonical prediction|" when three of its four curves are measured against a
-*different* equation's prediction, which is the whole point of the panel.
+**The demo caught another wrong figure-claim, and this one stated nothing false.**
+Panel (c) said "the two neighbours rise" while drawing one line exactly on top of
+the other — the morphs are bit-identically symmetric, so a reader counts two
+curves under a title claiming three. Naming the coincidence in the legend turns
+the overlap into a result. Panel (b)'s axis said "|mean - canonical prediction|"
+when three of its four curves are measured against a *different* equation's
+prediction, which is the whole point of the panel.
+
+**Stop citing the running count of wrong figure-claims; it is broken.** Phase 2
+records "four claims were wrong until someone looked", then 3c calls its one "a
+fourth" (it was the fifth), then 3d calls two different things "the fifth". The
+*lesson* is what travels — **a figure carries a claim and gets looked at, not
+exit-code checked** — and it has now recurred in every phase that shipped one.
+The tally has not been reconstructed, because doing so would mean rewriting three
+sub-phases' prose to fix an ordinal that carries no information.
 
 **Suite: 718 passed — and the timing needed three instruments, of which the first
 two still gave a wrong answer.** Against a same-session baseline of `455 passed in

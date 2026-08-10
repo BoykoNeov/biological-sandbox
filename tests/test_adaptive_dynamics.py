@@ -42,6 +42,8 @@ one of them.** This is Phase 3b's wrong-``R`` trap verbatim.
 
 from __future__ import annotations
 
+from functools import cache
+
 import numpy as np
 import pytest
 from numpy.random import SeedSequence
@@ -233,14 +235,22 @@ def weighted_loglog_slope(
     return float(slope), float(1.0 / np.sqrt(sxx)), float(chi2)
 
 
+@cache
 def measure_sweep(seed: int) -> dict[str, np.ndarray]:
     """Run the shipped sweep once and return everything any assertion needs.
 
-    One measurement, many claims. Splitting the slope, the teeth, the signs and
-    the saturation into separate test functions would make xdist rebuild the
-    whole 2.3 s sweep once per function — 3c's lesson — and, worse, would score
-    the teeth against *differently noisy* means than the correct target, turning
-    an exact comparison into a noisy one.
+    **One measurement, many claims**, and the reason is correctness before cost:
+    the teeth must be scored against the *same measured means* as the correct
+    target, since a tooth changes only the prediction. Re-simulating per tooth
+    would turn an exact comparison into a noisy one. That is why the slope, the
+    teeth and the signs all live in a single test function.
+
+    The saturation guard is a *separate* test — it is a claim about the sweep's
+    configuration rather than about the limit — so this is cached, which keeps
+    the second caller free within a worker. Cross-worker, xdist still rebuilds
+    it once (3c's lesson), and at 2.3 s that is an acceptable price for keeping
+    two unrelated claims in two readable tests. Callers must not mutate the
+    returned arrays.
     """
     branches = SeedSequence(seed).spawn(len(SWEEP))
     sigma_m, mean, sem, saturation = [], [], [], []

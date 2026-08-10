@@ -335,15 +335,48 @@ def predicted_product(params: TraitBranchingParams) -> float:
     fitted, this predicts all six measured ``(threshold, seed)`` configurations to
     within ``0.21%``. That is why the shipped assertion is on the *exponent*: this
     is a good predictor, not an identity.
+
+    **Raises off the grid the offset was fitted at**, in the stance
+    :meth:`TraitBranching.analytic_predictions` takes on a branching run and
+    ``hodgkin_huxley`` takes past the Hopf. Half of this expression is derived and
+    half is a constant fitted at one ``h``; evaluating it at another spacing would
+    return a number that is wrong in a way nothing downstream could detect, which
+    is precisely the failure mode this project refuses rather than tolerates.
     """
     h = params.spacing
+    if abs(h - FITTED_SPACING) > 1e-12:
+        raise ValueError(
+            f"the prefactor offset {PRODUCT_OFFSET} was fitted at h = {FITTED_SPACING} "
+            f"(n_grid = 161 on [-4, 4]) and is not derived, so it does not transfer to "
+            f"h = {h:.6g}. The 2/h^2 slope does transfer -- it comes from the mechanism -- "
+            "but the offset would have to be re-fitted, and the residual it stands for "
+            "(1.39 in the h -> 0 limit) is itself unexplained"
+        )
     return (2.0 / h**2) * math.log(
         1.0 / (params.threshold * params.seed_amplitude)
     ) + PRODUCT_OFFSET
 
 
-#: Fitted offset in :func:`predicted_product`, at ``h = 0.05``. Not derived.
+#: Fitted offset in :func:`predicted_product`. **Not derived**, and it belongs to
+#: one grid spacing only — hence :data:`FITTED_SPACING` and the refusal there.
 PRODUCT_OFFSET = -488.1
+
+#: The ``h`` :data:`PRODUCT_OFFSET` was fitted at: ``n_grid = 161`` on ``[-4, 4]``.
+FITTED_SPACING = 0.05
+
+
+def cluster_count(n: np.ndarray, threshold: float) -> int:
+    """Number of maximal runs of above-threshold bins.
+
+    The single definition. :func:`has_gap` and the ``n_clusters`` observable both
+    used to carry their own copy of this expression, differing only in the final
+    comparison -- two copies of a criterion that a future edit could leave
+    disagreeing, with only one of them under a mutant.
+    """
+    alive = n > threshold
+    if not alive.any():
+        return 0
+    return int(np.count_nonzero(alive[1:] & ~alive[:-1])) + int(alive[0])
 
 
 def has_gap(n: np.ndarray, threshold: float) -> bool:
@@ -355,10 +388,7 @@ def has_gap(n: np.ndarray, threshold: float) -> bool:
     4000`` where nothing had branched. Replacing it changed the answer by more
     than an order of magnitude: ``sa = 0.7`` needs ``t = 15 455``, not ``4000``.
     """
-    alive = n > threshold
-    if not alive.any():
-        return False
-    return int(np.count_nonzero(alive[1:] & ~alive[:-1])) + int(alive[0]) >= 2
+    return cluster_count(n, threshold) >= 2
 
 
 @dataclass
@@ -477,7 +507,7 @@ class TraitBranching:
             "max_abundance": float(n.max()),
             "centre": float(n[centre_index(state.params)]),
             "n_alive": float(np.count_nonzero(n > state.params.threshold)),
-            "n_clusters": float(_cluster_count(n, state.params.threshold)),
+            "n_clusters": float(cluster_count(n, state.params.threshold)),
         }
 
     def is_terminal(self, state: TraitBranchingState) -> bool:
@@ -517,14 +547,6 @@ class TraitBranching:
             "total": total,
             "mean_trait": float((x[i] * n_star[0] + x[j] * n_star[1]) / total),
         }
-
-
-def _cluster_count(n: np.ndarray, threshold: float) -> int:
-    """Number of maximal runs of above-threshold bins."""
-    alive = n > threshold
-    if not alive.any():
-        return 0
-    return int(np.count_nonzero(alive[1:] & ~alive[:-1])) + int(alive[0])
 
 
 #: The single shared, stateless instance used throughout the sandbox.
