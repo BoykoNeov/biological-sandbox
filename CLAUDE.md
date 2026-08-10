@@ -164,4 +164,24 @@ wrong number that still looks green — past the subcritical Hopf, where no real
 non-trivial homogeneous state exists, on a complex eigenvalue pair, and on a growth
 rate too near zero to measure (`j=13` needs `t_max = 18822` and returns `nan`).
 
-Next: Phase 3. See HANDOFF.md.
+**Phase 3 is planned, not built** — `docs/plans/phase3-{plan,context,tasks}.md`.
+HANDOFF §6's arc into the speculative, taking the three stops that still have a
+checkable prediction: **gLV + the May/Allesina-Tang random community matrix**,
+**Daisyworld**, **adaptive dynamics**, plus a **demographic-noise gLV** (priced at
+15.6 s, slope `-0.4984 +/- 0.0488`) to carry the stochastic-vs-limit thread. The
+`models/ecosystem/` quarantine stays **empty**, and that is the correct outcome.
+
+Two reframes, both measured before planning. First, **HANDOFF's May promise cannot
+be run as written**: the random-gLV ensemble is *empty* at the `S` where the
+asymptotic criterion means anything (feasibility `0.000` at `S = 40, sigma = 0.25`)
+and conditioning on feasibility *moves the spectrum* (`max Re eig(A) = -0.335` vs
+`max Re eig(diag(x*)A) = -0.117`). Phase 3 validates the **matrix law directly** —
+the circular law, and better the **elliptic law**, where predator-prey correlation
+makes a web *more* stable — and refuses to claim the composition. Second,
+**Daisyworld's regulation turned out to be closed-form**: `beta(T_w) = beta(T_b)`
+pins `T_w, T_b = T_opt -+ delta` with `delta` from a cubic in `q` alone, so
+`T_w* = 290.5117`, `T_b* = 300.4883` and the bare fraction `x* = 0.32653` are all
+**independent of luminosity** — `dT_w/dL` measured *exactly* `0`, and `dT_e/dL` is
+*negative*, i.e. overcompensation rather than mere flattening.
+
+Next: implement 3a. See `docs/plans/phase3-tasks.md`.
