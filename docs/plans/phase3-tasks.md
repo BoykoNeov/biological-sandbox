@@ -580,12 +580,39 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       smaller** than the correct point's, so every one of them is *tens of sigma
       from zero*. **"Significantly nonzero" passes all three.** Only a two-sided
       band around 1 rejects them.
-- [x] **Shippable config, seed-verified.** 5 points (`0.2 ... 0.0125`) at
-      `R = 1945/(4 sm)` costs **2.3 s** and gives slopes
-      `0.9514 / 0.9070 / 0.9660 / 0.9985` over seeds 0-3. A band of `[0.6, 1.4]`
-      sits **4.7 SE below the worst correct seed** and **204 tooth-SE above the
-      best tooth**. `4 points, R/4` is **rejected**: seed 1 reads `0.7930`, spread
-      `0.2523`.
+- [x] **Shippable config, seed-verified — and the saturating point was replaced.**
+      `sm = 0.2` puts **4.57%** of offered mutants at `s > 0.5`, where the
+      linearization the canonical equation rests on is worst, *and* it is the
+      leftmost point, carrying the most leverage on the slope. Three candidates at
+      `R = 1945/(4 sm)`, seeds 0-3:
+
+      | config | slopes | spread | max sat | cost |
+      |---|---|---|---|---|
+      | A `0.2 ... 0.0125` | `0.9514 / 0.9070 / 0.9660 / 0.9985` | 0.0914 | 4.57% | 2.3 s |
+      | **B `0.15 ... 0.0125`** | `0.9558 / 0.9802 / 1.0113 / 1.0409` | **0.0850** | **1.41%** | 2.3 s |
+      | C `0.1 ... 0.00625` | `0.9900 / 1.1224 / 1.1205 / 0.9071` | 0.2153 | 0.05% | 17.5 s |
+
+      **The saturation is harmless — A and B agree inside their spreads — but B is
+      strictly better** at equal cost, and its slopes centre on `1.00` where A's
+      centre on `0.955`, consistent with `sm = 0.2` contributing extra positive
+      error that flattens the log-log line. **C is rejected**: 7.6x the cost *and*
+      2.5x the spread, because dropping the long lever arm at high `sm` costs more
+      than the extra low point buys. `4 points, R/4` is also rejected — seed 1
+      reads `0.7930`, spread `0.2523`.
+- [x] **Band `[0.6, 1.4]` placed against config B's teeth at all four seed-sets**,
+      not one. Correct `+0.9558 / +0.9802 / +1.0113 / +1.0409` (**4/4 in band**);
+      every tooth **0/4**, worst `+0.0342 +- 0.0013`. The lower edge sits **5.7
+      correct-SE** below the worst correct seed and **431 tooth-SE** above the
+      worst tooth; the upper edge **5.8 correct-SE** above the best. A tooth scored
+      on a single seed is what got a 3c config rejected for clearing by 0.8%.
+- [x] **A cost trap in the test's *deterministic* half.** The `sm for sm^2` tooth's
+      target is `x` integrated to `u = U/sm`, which at `sm = 0.00625` is `u = 80` —
+      eight million pure-Python RK4 steps at `du = 1e-5`, and it dominated the
+      verification run's wall clock (36 s for four seeds against 2.3 s/seed of
+      actual simulation). `du = 1e-4` is ample (`pin_convention.py` shows `x(0.5)`
+      identical to twelve digits at `1e-4 / 1e-5 / 1e-6`), and the shipped test
+      needs only the *correct* target at `u = 0.5`. **The expensive part of a
+      stochastic test can be the deterministic helper.**
 - [ ] Ship it: `models/adaptive_dynamics.py`, the derivative checks (signed
       against finite differences), and this slope as the canonical-equation test.
 
@@ -635,7 +662,12 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       `h = 0.1 / 0.05 / 0.025` — ratios **4.421** and **4.098**. Richardson
       (4/3 rule) on `product * h^2` gives `40.0578 / 40.0580 / 40.0580 / 40.0575 /
       40.0558` across `sa = 0.60 ... 0.95`, i.e. over a **16.5x range in rate**.
-      **Richardson in the amplitude for the sixth time in this project.**
+      Note *which* instrument this is: refining `h` is Richardson in a
+      **discretization parameter**, the same tool as Phase 2's order-2 stencil
+      check — **not** the Richardson-in-the-amplitude used for HH's transient,
+      Gray-Scott's linearization, gLV relaxation, the LV period and the `sm` sweep
+      above. That one has now generalized five times and the count should not be
+      inflated by conflating the two.
 - [x] **It is not discretization.** `dt = 0.5 / 0.25 / 0.125` give products
       identical to five significant figures (spread `0.622 / 0.623 / 0.624%`), so
       `dt = 0.5` is already converged and the drift is a property of the grid
@@ -649,6 +681,22 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       **fixed** at `800` by the mechanism and only the offset fitted, that predicts
       all six `(thr, seed)` configurations to **<= 0.21%**. Across all six the
       exponent stays at `-1.001 ... -1.003`.
+- [x] **The `const` is fitted, and the mechanism is incomplete — say so.** The
+      derived part is the neighbour bin rising from `seed` to `thr` at
+      `s_0(h) ~ rate h^2/2`. That alone predicted `2 log(thr/seed)/h^2 = 5526`
+      against a measured `16086` — off by 2.9x — because the **centre bin must
+      also fall below `thr`**, and that half is not derived. It shows up as a real
+      additive residual in the limit: `product * h^2 -> 40.058` as `h -> 0`, while
+      `2 log(1/(thr*seed)) = 41.447`, leaving **`1.39` unexplained**. The formula
+      predicts, but it is not a closed form, and must not be read as one.
+- [x] **The no-branch side is now measured at the horizon the branch side needs.**
+      It had only been run to `t_max = 20 000`, while the nearest *presence* claim
+      (`sa = 0.95`) takes `149 822.5` — an absence asserted 7.5x short is a
+      statement about the horizon, not a sign change. At `t_max = 200 000` both
+      `sa = 1.05` and `sa = 1.5` still do not branch, stay finite, and leave the
+      centre bin at `K(0) = 1.000000`. The decaying bins reach **exactly `+0.0`**
+      (`n_i = 0` is a gLV invariant, so once a bin underflows it is pinned, with no
+      subnormal-arithmetic penalty), and each run costs **17 s**.
 - [ ] Ship it: the branch/no-branch sign change (the no-branch side stated as
       **"does not branch by `t = 200 000`"** — it is an absence claim and is
       horizon-bounded), and `t_branch * rate` asserting **the exponent**, with the
@@ -740,8 +788,12 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
 | `SD(sm) / sqrt(sm)` | const | **`0.439 / 0.497 / 0.499 / 0.538 / 0.555`**; `SD = 0.0621` at `sm = 0.0125` vs the slice's implied `0.0598` |
 | Canonical offset at `sm = 0.0125` | — | **`+2.39e-3`**, against the slice's recorded `+0.004` — `sa` and the step law are not recoverable, so the offset does not travel |
 | Canonical teeth, on the **slope** | — | **`+0.0181 +- 0.0007 / +0.0053 +- 0.0002 / -0.0030 +- 0.0001`** — all tens of sigma from zero, so "significantly nonzero" passes all three |
-| Ship config (5 points, `R/4`, 2.3 s), seeds 0-3 | — | **`0.9514 / 0.9070 / 0.9660 / 0.9985`**; band `[0.6, 1.4]` is 4.7 SE below the worst and 204 tooth-SE above the best tooth |
+| Ship config B (`0.15 ... 0.0125`, `R/4`, 2.3 s), seeds 0-3 | — | **`0.9558 / 0.9802 / 1.0113 / 1.0409`**, spread `0.0850`, max saturation `1.41%` |
+| ...config A (`0.2 ... 0.0125`) | — | `0.9514 / 0.9070 / 0.9660 / 0.9985`, spread `0.0914`, saturation **`4.57%`** — agrees with B, but centres on `0.955` not `1.00` |
+| ...config C (`0.1 ... 0.00625`) | — | `0.9900 / 1.1224 / 1.1205 / 0.9071`, spread **`0.2153` at 7.6x the cost — rejected** |
 | ...`4 points, R/4` | — | `1.0453 / 0.7930 / 0.9743 / 0.9986`, spread **0.2523 — rejected as seed-fragile** |
+| Band `[0.6, 1.4]` on config B, 4 seed-sets | — | correct **4/4 in**, every tooth **0/4**; edges **5.7 / 5.8 correct-SE** out, worst tooth **431 tooth-SE** below |
+| No branch at `sa = 1.05 / 1.5`, `t_max = 200 000` | — | **holds**, finite, centre `1.000000`, decayed bins **exactly `+0.0`**, 17 s each (the earlier check ran only to `20 000`, 7.5x short of the `sa = 0.95` branch) |
 | Untouched trait bins at `t_branch` | 0 | **bit-identically `0.0`** (158 bins) — the stability guarantee, and it fails loudly if diffusion returns |
 | `t_branch` at `sa = 0.60 ... 0.95`, `ngrid = 161` | — | **`9053.0 / 15455.0 / 28600.5 / 68707.5 / 149822.5`** (refined to `+-0.25`) |
 | `t_branch * rate` spread across `sa` | const | **0.622%** true; **0.594%** at quantum 10; **0.381%** at quantum 100 — *coarse checking flattens it* |
@@ -749,7 +801,8 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
 | ...Richardson to `h -> 0`, `product * h^2` | const | **`40.0578 / 40.0580 / 40.0580 / 40.0575 / 40.0558`** — constant to **0.006%** over a 16.5x rate range |
 | ...at `dt = 0.5 / 0.25 / 0.125` | — | products identical to 5 s.f. — **the drift is not discretization** |
 | `t_branch * rate` log-log slope | -1 | -1.0003 (slice); **`-1.00196 +- 0.00070` (built)**, and `-1.001 ... -1.003` across all six `(thr, seed)` |
-| Prefactor law `(2/h^2) log(1/(thr*seed)) + const` | — | slope **fixed** at `2/h^2 = 800`, offset `-488.1`: predicts all six configs to **<= 0.21%** |
+| Prefactor law `(2/h^2) log(1/(thr*seed)) + const` | — | slope **fixed** at `2/h^2 = 800`, offset `-488.1` **fitted**: predicts all six configs to **<= 0.21%** |
+| ...the part the mechanism does derive | — | neighbour rise alone gives `2 log(thr/seed)/h^2 = 5526` vs measured `16086` — **2.9x short**; the centre-bin fall is not derived, leaving `41.447 - 40.058 = 1.39` in the `h -> 0` limit |
 | Suite after 3c, `-n 6` | — | **410 passed in 453.91 s** |
 | ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so **no 3c regression is visible**. The runs were sequential, so this does not separate "3c is cheap" from "the machine drifted between them" |
 | Repressilator floor test, this session | — | **287.06 s** (with 3c) / **318.02 s** (without) vs **189.81 s** recorded in-suite — machine ~1.5-1.7x slower |
