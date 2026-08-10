@@ -445,9 +445,62 @@ Cross-session is worse: that same test read **287.06 s** last session against
 uninterpretable here. As in 3c, the two runs were sequential rather than
 interleaved, so monotone drift is confounded with the test-set difference.
 
-Next: 3e (adaptive dynamics), the last stop. Its `O(sm)` canonical-equation claim
-is **consistent with the slice data, not measured**, and must be re-measured at
-1200-reps-equivalent across >= 3 `sm` *before* a test is written — treat it exactly
-like 3c's bias. `t_branch`'s detection resolution needs fixing first too: the slice
-quantized it to 100 time units (+-1.6%) while reporting the product constant to
-1.2%. See `docs/plans/phase3-tasks.md`.
+**3e is measured but not implemented.** Both items the plan required *before* a
+test could be written are closed, and no model code exists yet.
+
+**The convention had to be recovered, because no slice code survives.** Holding
+`mu sm^2 t_max` fixed pins `U = (1/2) mu sm^2 K0 t_max`, since the canonical
+equation collapses to a parameter-free `dx/du = -x exp(-x^2/2)`. `U = 1/2`
+exactly — `x(0.5) = 1.849492240597` reproduces the recorded `1.849492` — and `K0`
+and `mu` are **not separately identifiable and need not be**. Three teeth targets
+the reconstruction was *not* fitted to confirm it to `3e-7`. But `sa` and the
+mutation-step law are **not recoverable and are load-bearing**, so the recorded
+`+0.004` offset and teeth `z` values **may not be cited**: the measured offset is
+`+2.39e-3`. A fifth "a number travels with its estimator", and the first where
+the estimator was only *partly* recoverable — separate what a record pins from
+what it merely used.
+
+**The `O(sm)` law is now measured:** slope **`+0.9977 +- 0.0225`** over a 32x
+range, `0.10 sigma` from 1 and **44.6 sigma from 2**, `chi2/dof = 1.07`, all six
+discrepancies positive, `err/sm` flat at `0.17723`. Replicate counts were
+*derived* (`R ~ 1945/sm`), not taken from the plan's "1200 reps". **A first run
+was wrong and the group-scatter self-check caught it** — `spawn_rngs` called with
+one seed inside the `sm` loop ran every point on common random numbers, giving
+under-dispersed groups (`0.16`, `0.34`) and `chi2/dof = 2.62`; per-`sm` seed
+branches send both to ~1. The teeth reproduce **3b's trap exactly**: a wrong
+canonical equation makes the discrepancy an `O(1)` constant, and a constant fits
+a near-perfect line, so all three sit *tens of sigma from zero* with SEs 30-200x
+smaller than the correct point's. **"Significantly nonzero" passes all three.**
+Ship config `sm = 0.15...0.0125` at 2.3 s (`0.2` dropped — 4.57% of its mutants
+saturate at `s > 0.5` and it is the highest-leverage point; harmless, but the
+replacement is free), band `[0.6, 1.4]`: correct **4/4**, every tooth **0/4**.
+
+**The branching model has no mutation term, and its own failure modes force it.**
+A draft with diffusion let the *outer* bins win (every mutant invades a resident
+at the singular point, the far ones most) and **overflowed** at `sa = 1.5`, where
+`lambda dt = -42` at the domain edge. The slice ran `dt = 0.5` there without
+blowing up, so its outer bins were *exactly* zero — true **iff** pure gLV, where
+`n_i = 0` is a per-bin invariant. 158 untouched bins are now asserted
+**bit-identically `0.0`**. So the morphs at `+-1` spacing are not merely a grid
+artifact: those are the only bins that ever carried mass, and **this is a
+3-species gLV in which `ngrid` enters only through `h`**.
+
+**The resolution fix inverts the assumption.** Checkpoint-and-refine gives
+`+-dt/2` instead of `+-50`. Coarse checking made the products look **more**
+constant than they are — `0.381%` at quantum 100 against `0.622%` true — because
+detection rounds *up* and that inflation is largest where `t_branch` is smallest,
+which is where the true product is lowest. **A tolerance read off the coarse
+measurement would have been too tight.** What survives is `O(h^2)`:
+`2.7481/0.6216/0.1517%` at `h = 0.1/0.05/0.025` (ratios `4.421`, `4.098`), and
+Richardson to `h -> 0` leaves the product constant to **0.006%** over a 16.5x rate
+range — Richardson in a *discretization* parameter, the Phase-2 stencil
+instrument, **not** the amplitude one. Exponent `-1.00196 +- 0.00070`, stable
+across six `(thr, seed)` configs, and threshold-invariance is a formula —
+`(2/h^2) log(1/(thr*seed)) + const`, predicting all six to `<= 0.21%` — **whose
+`const` is fitted**, since the centre-bin fall is not derived and leaves `1.39`
+unexplained in the limit. The no-branch side holds at `t_max = 200 000` for
+`sa = 1.05` and `1.5` (the earlier `20 000` check was 7.5x short of the nearest
+branch at `149 822`).
+
+Remaining: `models/adaptive_dynamics.py`, its tests, its demo, and the phase
+close-out. See `docs/plans/phase3-tasks.md`.
