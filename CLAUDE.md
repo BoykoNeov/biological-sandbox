@@ -65,6 +65,12 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 ## Status
 
+**Phases 0-3 are all complete.** The validated core is 14 models plus
+`core/random_matrix.py`; the `models/ecosystem/` quarantine is still **empty**,
+and that remains the correct outcome. Suite **718 passed** (see the Phase 3
+close-out below for why the wall-clock number needs a same-session baseline *and*
+the xdist worker assignment before it means anything).
+
 Phase 0 (Wright-Fisher) complete and validated. **Phase 1 complete**: RK4
 integrator + `DeterministicLimitModel` protocol, Gillespie SSA engine,
 `birth_death` and `isomerization` (the two exact closed-form checks),
@@ -168,7 +174,8 @@ wrong number that still looks green — past the subcritical Hopf, where no real
 non-trivial homogeneous state exists, on a complex eigenvalue pair, and on a growth
 rate too near zero to measure (`j=13` needs `t_max = 18822` and returns `nan`).
 
-**Phase 3 is planned, not built** — `docs/plans/phase3-{plan,context,tasks}.md`.
+**Phase 3 is complete** (3a-3e; the plan as written follows, and each sub-phase's
+findings are recorded below it) — `docs/plans/phase3-{plan,context,tasks}.md`.
 HANDOFF §6's arc into the speculative, taking the three stops that still have a
 checkable prediction: **gLV + the May/Allesina-Tang random community matrix**,
 **Daisyworld**, **adaptive dynamics**, plus a **demographic-noise gLV** (priced at
@@ -445,8 +452,13 @@ Cross-session is worse: that same test read **287.06 s** last session against
 uninterpretable here. As in 3c, the two runs were sequential rather than
 interleaved, so monotone drift is confounded with the test-set difference.
 
-**3e is measured but not implemented.** Both items the plan required *before* a
-test could be written are closed, and no model code exists yet.
+**3e is built, and Phase 3 is complete.** `models/adaptive_dynamics.py` (the
+trait-substitution sequence and its canonical-equation limit) and
+`models/trait_branching.py` (the trait-grid gLV), plus `demos/adaptive_dynamics.py`
+and 263 tests. Everything the measurement phase recorded reproduces **exactly** —
+the four config-B slopes and all four branch times bit-identically — which is what
+made every disagreement below a real finding rather than a porting artifact. The
+measurement notes that follow are kept as written; the build findings come after.
 
 **The convention had to be recovered, because no slice code survives.** Holding
 `mu sm^2 t_max` fixed pins `U = (1/2) mu sm^2 K0 t_max`, since the canonical
@@ -502,5 +514,110 @@ unexplained in the limit. The no-branch side holds at `t_max = 200 000` for
 `sa = 1.05` and `1.5` (the earlier `20 000` check was 7.5x short of the nearest
 branch at `149 822`).
 
-Remaining: `models/adaptive_dynamics.py`, its tests, its demo, and the phase
-close-out. See `docs/plans/phase3-tasks.md`.
+**Two implementations of one jump process, pinned on the generator state.** The
+`O(sm)` sweep needs 40 000 replicates at the smallest step, so it runs through a
+vectorized `run_cohort` (whole living cohort, one event per iteration, 2.3 s)
+while the protocol model's `step` advances one replicate. They are pinned by
+comparing `rng.bit_generator.state` after both runs, **not** the final trait — a
+final-value match can hide a compensating reordering of draws. The hazard is the
+horizon: the cohort advances the clock *before* testing it, so a replicate carried
+past `t_max` consumes its waiting time and nothing else, and testing terminality
+first — the natural way to write `step` — desynchronizes the stream on the last
+event of *every* replicate. Shipped as a mutant, red.
+
+**Both headline bands are two-sided, and both had to be.** The canonical teeth
+were known (a wrong equation makes the discrepancy an `O(1)` constant, so it fits
+a near-perfect line at 30-200x smaller SE). The branching side turned out the
+same way, measured: a rate formula missing its `-1/sK^2` reads **`-2.454`** and a
+competition kernel missing the factor of two in its exponent reads **`-0.553`**,
+and "the exponent is significantly negative" passes both. Band `[-1.15, -0.85]`
+against a correct `-1.00072 +- 0.00050`. Two further teeth — `K` built with
+`sigma_a`, and one-neighbour seeding — **do not branch at all**, and the kernel
+tooth bites the absence leg at `sa = 1.05` (spurious branch at `19 759`) but not
+at `1.5`, which is why both absence points are kept.
+
+**The cheap lever was the horizon, not the grid — and the obvious choice was
+backwards.** Dropping `sa = 0.95` (whose branch time exceeds the other four
+combined) gives a fit that is 2.2x cheaper *and* closer to `-1`. Coarsening the
+trait grid would have been the natural alternative and is wrong: `h = 0.1` is the
+**least** converged point. The absence leg keeps `t = 200 000` — the weak half of
+a sign change is not where you buy time.
+
+**Two bounds became predictions once they were looked at.** The neighbour bins'
+decay is not merely "small": against a resident pinned at `K0` their per-capita
+rate *is* the neighbour invasion fitness, so `seed * exp(s_0 t)` predicts the
+final value to **0.2%** over decay factors of `1e-10` and `1e-60`. And the
+neighbour's departure from its own small-`h` limit is exactly `-rate h^2 / 4`,
+matching to three digits — a `rel=1e-3` tolerance was tried first and **failed by
+11%**, because the departure is real.
+
+**`min eig > 0` on the Gaussian kernel failed, and the failure is the point.** It
+reads `-4.9e-16` at `n_grid = 41` against a top eigenvalue of `8.5`: positive
+definite in exact arithmetic, at the roundoff floor on any useful grid. Asserted
+as *not meaningfully negative* against a size-scaled floor, plus strict positivity
+on a coarse grid. **The near-singularity is not a nuisance to tolerate — it is the
+structural degeneracy the Gyllenberg-Meszena argument is about, in the
+arithmetic.**
+
+**32/33 mutants red; the first run scored 25/33 and every survivor was
+instructive.** Two shared one cause: `r_growth` and `sigma_k` both default to
+exactly `1.0`, where `-r x / sK^2` is indistinguishable from `-x / sK`, `-x / sK^2`
+and `-r x / sK` — **the fourth time "sweep the constant the probe lands on" has
+caught something in this project**. A third was a threshold nothing could fail: a
+mutant returning the *unrefined* coarse checkpoint passed the refinement test,
+since `t_refined == t_coarse` satisfies both "within one quantum" and "fewer than
+`check_interval` steps". The lone survivor is a **provable no-op** — `rng.random()`
+is in `[0, 1)`, so `< p` is False for every `p <= 0` — and the generator-state pin
+*demonstrates* it by holding bit-identical between a mutated cohort and an
+unmutated `step`. Four patterns matched zero times because `ruff format` reflowed
+them; the runner reports that as a **runner bug rather than a survivor**, which is
+the difference between 32/33 and a silent blind spot.
+
+**A finite-difference check can be green against the wrong derivative.** The
+mixed-derivative stencil, written the natural way, walked the *diagonal* and
+returned exactly `-1.000000` at every probe — a correct number for `dD/dx`, not
+for `d2s/dxdy` (`+1.959` at `x = 2`). It disagreed with the closed form only
+because the closed form was right.
+
+**And the deterministic helper was again the expensive part.** `CANONICAL_DU`
+is `1e-3`, chosen by measuring where the answer stops moving: identical to twelve
+digits, and **1.7 s against 27.7 s** at `1e-4`, versus 2.3 s for the entire
+stochastic sweep it checks. It is the module default rather than a caller's
+opt-in, because in the measurement phase it was a monkey-patch and a helper that
+must be *remembered* to be cheap will drift back.
+
+**The demo caught the project's sixth wrong figure-claim, and this one stated
+nothing false.** Panel (c) said "the two neighbours rise" while drawing one line
+exactly on top of the other — the morphs are bit-identically symmetric, so a
+reader counts two curves under a title claiming three. Naming the coincidence in
+the legend turns the overlap into a result. Panel (b)'s axis said "|mean -
+canonical prediction|" when three of its four curves are measured against a
+*different* equation's prediction, which is the whole point of the panel.
+
+**Suite: 718 passed — and the timing needed three instruments, of which the first
+two still gave a wrong answer.** Against a same-session baseline of `455 passed in
+164.29 s`, the full suite read `300.06 s`, which looks like an `+82%` regression on
+a test set that costs `19.5-21.2 s` standalone. So the **worker assignment** was
+read directly with `-v`: both repressilator tests had landed on **`gw0`**, run back
+to back, and that is the critical path. The baseline cannot have packed them
+together — its total is *below their sum* (`260.71 s`). That much is solid, and it
+is the first time in this phase a timing mechanism was **observed rather than
+inferred**.
+
+**Then two more runs of the identical command broke the tidy story: `300.06 /
+303.91 / 225.80 s`.** The two long tests themselves ran `247 s` in one and `175 s`
+in another — the machine's recorded `+-30%`, arriving *within* a single session.
+So there are **two effects, not one**, and at fixed machine speed the `+136 s`
+decomposes roughly as packing `~86 s`, 3e's own tests `~20-30 s`, drift `~75 s`.
+`-n 8` was measured as the documented fix and **rejected**: `266.82 s` against a
+same-session `-n 6` of `225.80 s`, sequential so drift is confounded — "no
+improvement demonstrated", not "worse". `-n 6` stays, the posture the Phase-1
+close-out took when its `-n` fix measured worse.
+
+**The rule, now on its third repetition and finally specific.** A total needs a
+same-session baseline; the baseline needs the **worker tags**, because adding
+*any* tests reshuffles xdist's collection-order packing; and the worker tags need
+the **per-test durations**, because this suite's critical path is two tests whose
+own timing varies by 1.5x inside one session. Expect to *decompose*, not to
+attribute — and note that the first attribution written from the `-v` run was
+clean, confident, and only two-thirds right.

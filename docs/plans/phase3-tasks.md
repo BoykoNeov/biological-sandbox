@@ -613,8 +613,46 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       identical to twelve digits at `1e-4 / 1e-5 / 1e-6`), and the shipped test
       needs only the *correct* target at `u = 0.5`. **The expensive part of a
       stochastic test can be the deterministic helper.**
-- [ ] Ship it: `models/adaptive_dynamics.py`, the derivative checks (signed
+- [x] **Shipped**: `models/adaptive_dynamics.py`, the derivative checks (signed
       against finite differences), and this slope as the canonical-equation test.
+      The four config-B slopes reproduce *exactly* — `0.9558 / 0.9802 / 1.0113 /
+      1.0409`, max saturation 1.30-1.42%, 2.1-2.3 s/seed — and the port is
+      **bit-identical** to the measurement script it was written from (checked
+      at two `sm`, on the whole `x_final` vector).
+
+### Two implementations of one process, pinned on the generator state
+
+The sweep needs 40 000 replicates at the smallest `sm`, so it runs through a
+**vectorized** `run_cohort` that advances the whole living cohort by one event
+per iteration; the protocol model's `step` advances one replicate. Both are kept
+because the process *is* a dynamical process with a clock and belongs on the
+protocol, and the demo plots it.
+
+- [x] **The pin is the generator state, not the final trait.** A final-value
+      match can hide a compensating reordering of draws. Comparing
+      `rng.bit_generator.state` after both runs asserts they consumed the stream
+      **draw for draw**, and it passes at `sm = 0.15 / 0.05 / 0.025` along with
+      the event and fixation counts.
+- [x] **The hazard is the horizon, and it is invisible in the mean.**
+      `run_cohort` advances the clock *before* testing it, so a replicate carried
+      past `t_max` consumes its waiting time and nothing else. Testing terminality
+      first is the natural way to write `step` and desynchronizes the stream on
+      the last event of *every* replicate. Shipped as a mutant, and red.
+- [x] **A non-vacuity guard was needed.** At `sm = 0.15` from `x0 = 2` the
+      horizon is short enough that a replicate can fix nothing at all, and two
+      frozen residents agree trivially; the fixation count is asserted positive
+      only where it can be.
+
+### `CANONICAL_DU` was chosen by measurement, and it mattered
+
+- [x] **1.7 s against 27.7 s, for an answer identical to twelve digits.** The
+      `sm`-for-`sm^2` tooth integrates to `u = U/sm`, so the five sweep points
+      together travel `u = 78`. Against `du = 1e-4`, `du = 1e-3` moves `x(U)` by
+      `3e-15` and the most demanding tooth target by `2e-13` relative — while the
+      whole stochastic sweep it exists to check costs 2.3 s. The cheap step is the
+      module **default** rather than a caller's opt-in, because the measurement
+      script had it as a monkey-patch and a helper that must be *remembered* to be
+      cheap will drift back.
 
 ### The branching formulation was reconstructed from its own failure modes
 
@@ -697,13 +735,104 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       centre bin at `K(0) = 1.000000`. The decaying bins reach **exactly `+0.0`**
       (`n_i = 0` is a gLV invariant, so once a bin underflows it is pinned, with no
       subnormal-arithmetic penalty), and each run costs **17 s**.
-- [ ] Ship it: the branch/no-branch sign change (the no-branch side stated as
-      **"does not branch by `t = 200 000`"** — it is an absence claim and is
-      horizon-bounded), and `t_branch * rate` asserting **the exponent**, with the
-      prefactor law available as a second, independent check.
-- [ ] Label the post-branching morph structure exploratory, now with the
-      *mechanism* (only three bins are ever seeded) as the stated reason rather
-      than the bare grid-dependence measurement.
+- [x] **Shipped**: `models/trait_branching.py` — the sign change (the no-branch
+      side named **"does not branch by `t = 200 000`"** in the test itself, since
+      it is an absence claim and is horizon-bounded), and `t_branch * rate`
+      asserting **the exponent**, with the prefactor law as a second, independent
+      check. All four branch times reproduce **bit-identically**
+      (`9053.0 / 15455.0 / 28600.5 / 68707.5`), and 158 of 161 bins are exactly
+      `0.0` at the branch.
+- [x] **The post-branching morph structure is labelled exploratory with the
+      *mechanism* as its reason** — only three bins are ever seeded, and an empty
+      bin stays empty in pure gLV — rather than with the bare grid-dependence
+      measurement. The Gyllenberg-Meszena degeneracy argument is kept separate
+      and labelled as what it is: category C, and about the *continuum* model.
+
+### The scaling test drops `sa = 0.95`; the coarser grid was the wrong lever
+
+The obvious way to make this cheap is a coarser trait grid, and it is wrong:
+`h = 0.1` is the **least** converged point (product spread `2.75%` against
+`0.62%` at `h = 0.05`), so it would assert the law where it holds worst, and the
+band would have to be re-derived there. The cheap lever is the horizon.
+
+- [x] **`sa = 0.95` alone costs more than the other four combined** (`149 822`
+      against `121 816`), and the four-point fit is both cheaper and **closer** to
+      the prediction: `-1.00072 +- 0.00050` over a 7.6x rate range, against
+      `-1.00196 +- 0.00070` over 16.5x. Three points would be 5x cheaper again and
+      is rejected — 1 degree of freedom, which is 3c's residual-only-SE trap.
+- [x] **The absence leg keeps `t = 200 000` and is not shaved.** 27 s of the
+      module's 40 s, and it is the *weak* half of a sign change; buying time by
+      weakening it is the kind of thing this project writes down rather than does.
+
+### The neighbours' decay is a prediction, not a bound
+
+- [x] Against a resident pinned at `K0` the neighbour's per-capita rate **is**
+      `neighbour_fitness`, so `seed * exp(s_0 t)` predicts where it lands. It does,
+      to `0.2%`, over decay factors of `1e-10` (`sa = 1.05`) and `1e-60`
+      (`sa = 1.5`). The first draft asserted only "small", which is what a wrong
+      model would also satisfy.
+- [x] Likewise the neighbour's departure from its own small-`h` limit is
+      **predicted**, not tolerated: expanding `1 - e^{-z}` gives a relative gap of
+      exactly `-rate h^2 / 4`, which is `-1.111e-3` at `sa = 0.6` and matches to
+      three digits. A `rel=1e-3` tolerance was tried first and failed by 11% — the
+      departure is real and is the next order in `h^2`.
+
+### The Gaussian kernel is positive definite and numerically singular
+
+- [x] Asserting `min eig > 0` **failed**: at `n_grid = 41` the smallest eigenvalue
+      is `-4.9e-16` against a largest of `8.5`. PD in exact arithmetic, at the
+      roundoff floor on any grid fine enough to matter. Asserted the only way it
+      honestly can be — *not meaningfully negative*, against a floor scaled by the
+      matrix size and its own largest eigenvalue, plus strict positivity on a
+      coarse grid where it is still resolvable. **This near-singularity is not a
+      nuisance to tolerate: it is the structural degeneracy the literature
+      argument is about, showing up in the arithmetic.**
+
+### Mutants: 32/33 red, and the survivor is provably invisible
+
+The first run scored **25/33**. Four survivors; two were real gaps.
+
+- [x] **Two survivors, one root cause, and it is this project's most repeated
+      lesson.** `r_growth` and `sigma_k` both default to exactly `1.0`, where
+      `-r x / sK^2` is indistinguishable from `-x / sK`, from `-x / sK^2` and from
+      `-r x / sK`. The gradient test ran only at the defaults. Now swept — the
+      **fourth** time "sweep the constant the probe happens to land on" has caught
+      something here, after the `N = 5000` conservation test, the `A_g = 0.5`
+      no-op and the white/black swap.
+- [x] **A third was a threshold nothing could fail.** A mutant returning the
+      coarse checkpoint *unrefined* passed the refinement test, because
+      `t_refined == t_coarse` satisfies both "within one quantum" and "fewer than
+      `check_interval` steps" perfectly. The test now asserts refinement **moved**
+      the answer: strictly inside the interval, off the coarse grid, and with at
+      least one refine step.
+- [x] **The survivor is provable, and the suite demonstrates it.** Deleting the
+      `max(0, s)` clip cannot change any outcome: `rng.random()` lives in `[0, 1)`,
+      so `random() < p` is False for every `p <= 0`, negative or zero — same
+      outcome, same draws. The generator-state pin compares a *mutated* cohort
+      against an *unmutated* `step` and they stay bit-identical, which is the
+      proof rather than an assumption. The clip stays because `p_fix` is
+      **reported** as a probability, and a negative one would misdescribe it.
+- [x] **A finite-difference check can be green against the wrong derivative.**
+      The mixed-derivative stencil, written the natural way, walked the *diagonal*
+      and returned exactly `-1.000000` at every probe — a perfectly correct number
+      for `dD/dx`, not for `d2s/dxdy` (`+1.959` at `x = 2`). It disagreed with the
+      closed form only because the closed form was right.
+- [x] **Four "runner bugs" are worth recording as process.** Four patterns matched
+      zero times because `ruff format` had reflowed those lines between writing the
+      mutant list and running it. The runner reports a non-matching pattern as a
+      **runner bug rather than a survivor**, which is the difference between
+      "32/33 red" and a silent 4-mutant blind spot.
+
+### The demo's figure, and the sixth wrong figure-claim caught by looking
+
+- [x] Panel (c) claimed "the two neighbours rise" while drawing **one line on top
+      of the other** — the two morphs are exactly symmetric, so a reader counts two
+      curves under a title claiming three. Nothing stated was false; the picture
+      simply did not show what the title said. Fixed by drawing them at different
+      widths and naming the coincidence in the legend, so the overlap reads as a
+      *result*. Panel (b)'s y-axis said "|mean - canonical prediction|" when three
+      of its four curves are measured against a **different** equation's
+      prediction, which is the entire point of the panel.
 
 ## All
 
@@ -719,8 +848,34 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
       even the 155-vs-190 gap is not a like-for-like comparison; see
       [[numbers-travel-with-their-estimator]]. **Any future suite-timing claim on
       this machine must be bracketed by +-30% or it is noise.**
-- [ ] Re-time the suite at phase end; update `CLAUDE.md`, memory, docs; commit and
-      push.
+- [x] **Re-timed at phase end. One mechanism was finally *observed* rather than
+      inferred — and the first attribution written from it was still too clean.**
+      The total rose `+136 s` on a test set whose own cost is `19.5-21.2 s`, so
+      the worker assignment was read directly with `-v`: **both repressilator
+      tests landed on `gw0`**, run back to back, and that is the critical path.
+      The baseline cannot have packed them together, because its total
+      (`164.29 s`) is **below their sum** (`260.71 s`). That much is solid.
+- [x] **But a fourth and fifth run broke the tidy story.** The same `-n 6` command
+      on the same tree read `300.06 / 303.91 / 225.80 s`, because the two long
+      tests themselves ran `247 s` in one run and `175 s` in another — the
+      machine's already-recorded `+-30%`, arriving *inside* a single session and
+      accounting for most of the spread. **Two effects, not one**, and the honest
+      decomposition at fixed machine speed is roughly: packing `~86 s`, 3e's own
+      tests `~20-30 s`, drift `~75 s`.
+- [x] **`-n 8` measured, and rejected: `266.82 s` against a same-session `-n 6` of
+      `225.80 s`.** Sequential runs, so drift is confounded — the claim is "no
+      improvement demonstrated", not "`-n 8` is worse". `-n 6` stays, the same
+      posture the Phase-1 close-out took when its proposed `-n` fix measured worse.
+- [x] Update `CLAUDE.md`, memory, docs; commit and push.
+
+**The general lesson, now sharper on its third repetition.** A suite total here is
+worthless without a same-session baseline; a same-session baseline is *still*
+worthless when two long tests can migrate between workers; and the worker
+assignment is *still* not enough, because the same two tests vary by 1.5x inside
+one session. **Read the worker tags AND the per-test durations, and expect to
+decompose rather than to attribute.** The one-line summary that fits every run:
+adding any tests reshuffles xdist's packing, and this suite's critical path is two
+repressilator tests whose own timing is unstable.
 
 ## Measurements to record as they land
 
@@ -809,4 +964,26 @@ canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
 | Suite after 3d, `-n 6` | — | **455 passed in 180.82 s** (floor test **137.26 s**) |
 | ...same-session baseline, 3d ignored | — | **410 passed in 217.12 s** (floor test **158.58 s**) |
 | ...what that does and does not say | — | The floor test, **untouched by 3d**, moved **15.5%** between the two runs, so the totals are not attributable to the test set. **No 3d regression is visible**; nothing stronger is claimable. Cross-session it is worse still: the same test read **287.06 s** last session against **137.26 s** now, a **2.1x** machine swing, so the 453.91 s recorded after 3c is uninterpretable here. Runs were sequential, not interleaved, so monotone drift is confounded with the test-set difference |
-| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending — 3e)* |
+| Port vs the measurement script, whole `x_final` | bit-identical | **True** at `sm = 0.15` (3388 events) and `sm = 0.05` (31 109) |
+| Config B slopes, built vs recorded | reproduce | **`0.9558 / 0.9802 / 1.0113 / 1.0409` — exactly**; max saturation `1.30-1.42%`; 2.1-2.3 s/seed |
+| `run_cohort(n_rep=1)` vs `MODEL.step` | identical | **bit-identical trait, event count, fixation count, and generator state** at `sm = 0.15 / 0.05 / 0.025` |
+| `canonical_trait` vs the recorded literal | 0 | **`+1.7e-13`** at `du = 1e-3` |
+| `CANONICAL_DU`: `1e-4` vs `1e-3` over the five tooth targets | — | **27.7 s vs 1.7 s**; `x(U)` moves `3e-15`, worst target `2e-13` relative. The stochastic sweep it checks costs **2.3 s** |
+| Branch times, built vs recorded | reproduce | **`9053.0 / 15455.0 / 28600.5 / 68707.5` — bit-identical**, 158/161 bins exactly `0.0` |
+| Exponent, 4 points (drop `sa = 0.95`) vs 5 | -1 | **`-1.00072 +- 0.00050`** over 7.6x vs `-1.00196 +- 0.00070` over 16.5x — **cheaper *and* closer**, 121 816 vs 271 638 time units |
+| ...3 points (`0.60...0.80`) | — | `-0.99967 +- 0.00034`, 5x cheaper again — **rejected at 1 dof** (3c's residual-only-SE trap) |
+| Exponent teeth | reject | wrong rate formula **`-2.454`**; kernel missing its `1/2` **`-0.553`**; `K` built with `sigma_a`, and one-neighbour seeding, **do not branch at all** |
+| Kernel tooth on the absence leg | no branch | **branches at `19 759` at `sa = 1.05`**, no branch at `1.5` — it bites the near leg only, which is why both are kept |
+| Threshold / seed invariance, 3 points | exponent fixed | exponent `-0.99967 / -0.99976 / -0.99962` while the product moves **`16 089 -> 17 951 -> 19 776`, +23%** |
+| Neighbour decay vs `seed * exp(s_0 t)` | 1 | **within 0.2%** at decay factors `8.0e-11` (`sa = 1.05`) and `4.6e-61` (`sa = 1.5`) |
+| Neighbour fitness vs its small-`h` limit | `-rate h^2/4` | matches to 3 digits (`-1.111e-3` at `sa = 0.6`); a `rel=1e-3` tolerance **failed by 11%** |
+| Gaussian kernel `min eig`, `n_grid = 41` | > 0 | **`-4.9e-16`** against a top eigenvalue of `8.5` — PD exactly, singular numerically |
+| Pair equilibrium, closed form vs linear solve | 0 | `<= 1e-13`; simulated residual **`6.7e-16`**, exactly 2 bins nonzero |
+| 3e mutants confirmed red | all | **32 / 33**; the survivor is a **provable no-op** (`random()` is in `[0,1)`, so `< p` is False for every `p <= 0`) |
+| Cost of the two 3e test modules, `-n 6` | — | **263 passed in 19.5 / 19.8 / 21.0 / 21.2 s** (four measurements, one session) |
+| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | **718 passed in 300.06 / 303.91 / 225.80 s** — three runs, one session, same command |
+| ...same-session baseline, 3e ignored | — | **455 passed in 164.29 s** |
+| The two repressilator tests, five runs, one session | — | `135.00+112.46` / `144.13+116.58` / `115.08+97.04` / `88.62+86.49` — their **sum swings `175 -> 261 s`, a 1.5x range**, and it is the critical path |
+| Do they share a worker? | — | **With 3e: yes.** Confirmed by worker tag (`gw0`) in the `-v` run, and implied in the others because the total tracks their **sum**, not their max. **Without 3e: no** — the baseline total (`164.29 s`) is *below their sum* (`260.71 s`). Adding *any* tests reshuffles xdist's collection-order distribution |
+| What the `+136 s` actually decomposes into | — | At comparable machine speed: packing the two long tests onto one worker costs **~86 s**, the 3e modules' own work is **~20-30 s** (measured standalone at `19.5-21.2 s`), and the machine's `+-30%` drift moves the total by **~75 s** on top. **The first attribution written here said "packing, not a 3e cost" and was too clean** — the packing claim survives, the tidy magnitude did not |
+| `-n 8` vs `-n 6`, same session | faster? | **266.82 s vs 225.80 s — no improvement, `-n 6` stays.** The runs were sequential so drift is confounded; the honest reading is "not demonstrated", not "`-n 8` is worse". Same posture as the Phase-1 close-out's reverted `-n` fix |
