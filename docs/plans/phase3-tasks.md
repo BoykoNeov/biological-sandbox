@@ -516,33 +516,146 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## 3e — adaptive dynamics
 
-- [ ] `models/adaptive_dynamics.py` — invasion fitness, selection gradient and both
-      second derivatives in closed form, checked **signed** against finite
-      differences.
-- [ ] Branch/no-branch sign change across `sa = sK` with the **gap** criterion and
-      the measured horizons (`sa = 0.95` needs `t = 200 000`).
-- [ ] `t_branch * rate = const` (slope `-1.0003`) — assert **the exponent, not the
-      prefactor** (`log(threshold/seed)`, not universal). **Fix the detection
-      resolution first:** the slice checked for a gap every 200 steps at
-      `dt = 0.5`, quantizing `t_branch` to 100 time units (every measured value
-      ends in `.5`), so at `sa = 0.60` the `3200.5` carries **+-1.6%** while the
-      product is reported constant to 1.2%. **Asserting 1.2% would be asserting
-      below the measurement's own resolution** — the "threshold nothing can fail"
-      discipline pointed the other way. Either shrink the check interval or derive
-      the tolerance from it.
-- [ ] **Re-measure the `sm` sweep at 1200-reps-equivalent across at least three
-      `sm` BEFORE writing the test** (~30 s of compute). The `O(sm)` claim is
-      currently *consistent with* the data, not measured: ratios `2.15` and `2.19`
-      come from low-replicate points, only `sm = 0.0125` has 1200 reps, and the
-      `sm = 0.025` point is non-monotone. Treat it exactly like the `O(1/Omega)`
-      bias — **open until measured**.
-- [ ] Canonical equation as an **`O(sm)` vanishing discrepancy**, not a single-`sm`
-      tolerance — a tolerance at one `sm` was measured to tighten onto a real
-      `+0.004` bias and would fail a correct model as replicates grow.
-- [ ] Label the post-branching morph structure exploratory, with the
-      grid-dependence measurement (`+-0.100 / +-0.050 / +-0.025` at
-      `ngrid = 81/161/321`) as the stated reason, and the positive-definiteness
-      explanation labelled **category C**.
+**Both open measurements are closed, ahead of any model code — this section
+records what they returned. Nothing is implemented yet.**
+
+### The convention had to be recovered before either could be measured
+
+No slice code survives in the repo, so the 3e numbers exist only as the plan's
+tables. The canonical-equation sweep held `mu sm^2 t_max` fixed, which pins one
+scalar: `U = (1/2) mu sm^2 K0 t_max`, because under `u = (1/2) mu sm^2 K0 t` the
+canonical equation collapses to the parameter-free `dx/du = -x exp(-x^2/2)`.
+
+- [x] **`U = 1/2` exactly.** `x(0.5) = 1.849492240597` reproduces the recorded
+      `1.849492` on all six digits, and bisecting for the `U` that hits the
+      recorded value gives `0.500000719`, inside the `+-1.5e-6` window 6-digit
+      rounding allows. With `r = 1, sK = 1` (pinned by the recorded
+      `dD/dx = -r/sK^2 = -1.000000000000`) and `x0 = 2`, the process is a
+      function of `(U, sm, sa)` alone: **`K0` and `mu` are not separately
+      identifiable and do not need to be** — `K0` cancels in the invasion
+      fitness (a ratio of `K`s) and the event count is `mu K0 t_max = 2U/sm^2`.
+- [x] **Three recorded numbers the convention was *not* fitted to confirm it.**
+      The teeth targets are properties of the deterministic side alone, so they
+      are independent of `sa` and of the mutation-step distribution — the two
+      things nothing recorded could pin. Reconstructed: `1.662326 / 1.213061 /
+      0.000000` against recorded `1.662326 / 1.213061 / 0.000000`, agreeing to
+      `3e-7`, which is just the recorded values' own rounding.
+- [x] **`sa` and the step distribution are choices, and they are load-bearing.**
+      Both enter the `O(sm)` coefficient. `sa = 0.7` (matching the branching
+      runs) and a Gaussian step are *stated*, not inherited. **Consequence: the
+      recorded `+0.004` offset and the teeth `z` values (`110.84 / 371.21 /
+      1074.26`) are estimator-dependent and may not be cited against this
+      convention** — the measured offset at `sm = 0.0125` is `+2.39e-3`, not
+      `+0.004`. A fifth instance of "a number travels with its estimator", and
+      the first where the estimator was only partly recoverable.
+
+### The `O(sm)` law is now measured, not "consistent with"
+
+- [x] **Slope `+0.9977 +- 0.0225` over a 32x range in `sm`** (`0.2 ... 0.00625`),
+      i.e. **0.10 sigma from 1 and 44.6 sigma from 2**, `chi2/dof = 1.07`. All six
+      discrepancies are **positive** — a sign flip would have refuted the reading
+      regardless of the slope. Dropping `sm = 0.2` gives `+1.0174 +- 0.0303`.
+      `err/sm` is flat at `0.17723` with `chi2/dof = 0.85` about a constant, so
+      **no `O(sm^2)` correction is resolvable** over that range.
+- [x] **The replicate counts were derived, not typed.** The pilot gives
+      `err ~ 0.17 sm` and `SD ~ 0.5 sqrt(sm)` (the `sqrt(sm)` scaling is itself a
+      prediction — accepted steps are `O(sm)` in number and `O(sm)` in size — and
+      it is confirmed: `SD/sqrt(sm)` runs `0.439 ... 0.555`). Demanding `z ~ 15`
+      gives `R ~ 1945/sm`. The plan's "1200-reps-equivalent" is a number from a
+      different estimator; the measured `SD = 0.0621` at `sm = 0.0125` against the
+      slice's implied `0.001725*sqrt(1200) = 0.0598` is what says the convention
+      matches at all.
+- [x] **A first run was wrong, and the free self-check caught it.** Group-to-group
+      scatter must agree with the within-group `SD/sqrt(R)`; it read
+      `0.75/0.16/0.34/0.94/0.55` — systematically *under*-dispersed — and
+      `chi2/dof` was `2.62`. Cause: `spawn_rngs` was called with the same seed
+      inside the `sm` loop, so **every sweep point ran on common random numbers**
+      and the fit treated correlated points as independent. With an independent
+      seed branch per `sm` the self-check reads `1.14/1.60/0.71/0.73/0.82/1.10`
+      and `chi2/dof` falls to `1.07`. The excess scatter was *never* physics.
+- [x] **The teeth reproduce 3b's trap exactly, and it decides the assertion's
+      form.** A wrong canonical equation makes the discrepancy an `O(1)` constant,
+      and a constant fits a near-perfect line: the three teeth read
+      `+0.0181 +- 0.0007`, `+0.0053 +- 0.0002`, `-0.0030 +- 0.0001` — SEs **30-200x
+      smaller** than the correct point's, so every one of them is *tens of sigma
+      from zero*. **"Significantly nonzero" passes all three.** Only a two-sided
+      band around 1 rejects them.
+- [x] **Shippable config, seed-verified.** 5 points (`0.2 ... 0.0125`) at
+      `R = 1945/(4 sm)` costs **2.3 s** and gives slopes
+      `0.9514 / 0.9070 / 0.9660 / 0.9985` over seeds 0-3. A band of `[0.6, 1.4]`
+      sits **4.7 SE below the worst correct seed** and **204 tooth-SE above the
+      best tooth**. `4 points, R/4` is **rejected**: seed 1 reads `0.7930`, spread
+      `0.2523`.
+- [ ] Ship it: `models/adaptive_dynamics.py`, the derivative checks (signed
+      against finite differences), and this slope as the canonical-equation test.
+
+### The branching formulation was reconstructed from its own failure modes
+
+- [x] **There is no mutation/diffusion term, and that is forced.** A first draft
+      carried nearest-neighbour diffusion and seeded every bin at `1e-6`. It
+      failed twice: the *outer* bins won (against a resident at the singular point
+      every mutant has positive invasion fitness and the far ones have the most,
+      so it "branched" at `t = 7.5` into five clusters out to `+-2.6`), and
+      `sa = 1.5` **overflowed** — at `x = +-4`, `K = 3.35e-4` against a competition
+      load of `0.029`, so the local eigenvalue is `-84` and `dt = 0.5` gives
+      `lambda dt = -42`, far outside RK4's stability region. The slice ran
+      `dt = 0.5` on `[-4, 4]` without blowing up, so its outer bins must have been
+      **exactly zero and stayed exactly zero** — which happens iff there is no
+      diffusion, since pure gLV has `n_i = 0` as a per-bin invariant. Domain
+      (recovered from the recorded morph positions), prefactor arithmetic and
+      stability all agree on one formulation. Asserted directly: 158 untouched
+      bins are **bit-identically `0.0`** at `t_branch`.
+- [x] **So the morph positions are not merely a grid artifact — those are the only
+      bins that ever carried mass.** The seed is the centre plus its two immediate
+      neighbours, which is why the morphs sit at exactly `+-1` spacing at
+      `ngrid = 81/161/321`. Stronger than the plan's "grid-dependent, category C",
+      and it means **this is a 3-species gLV in which `ngrid` enters only through
+      `h`** — worth saying plainly rather than describing a 161-species trait grid.
+      The Gyllenberg-Meszena positive-definiteness argument is a separate
+      category-C claim about the *continuum* model and is not what produces `+-h`.
+
+### The detection resolution is fixed, and the answer inverts the assumption
+
+- [x] **Checkpoint-and-refine**, not per-step checking: keep the previous coarse
+      checkpoint's state and, on first detection, replay that one interval step by
+      step. Resolution goes from `+-50` to `+-dt/2 = +-0.25` for ~200 extra RK4
+      steps on one interval of one run, rather than 400 000 extra gap checks on
+      every `sa = 0.95` run at every parameter point.
+- [x] **Coarse checking made the products look MORE constant than they are.** True
+      spread `0.622%`; at quantum `10` it reads `0.594%`, at quantum `100`
+      **`0.381%`**. Detection rounds *up* to the next checkpoint, and that
+      inflation is largest where `t_branch` is smallest — large rate, small `sa` —
+      which is exactly where the true product is lowest, so quantization partly
+      cancels the real drift. **A tolerance derived from the coarse measurement
+      would be too tight and would fail a correct model.** The plan was right to
+      refuse the 1.2%, but the direction is the opposite of the natural guess:
+      the hazard was not inflated scatter, it was flattened scatter.
+- [x] **The surviving drift is `O(h^2)`, and in the `h -> 0` limit the product is
+      constant to 0.006%.** Spread across `sa` is `2.7481% / 0.6216% / 0.1517%` at
+      `h = 0.1 / 0.05 / 0.025` — ratios **4.421** and **4.098**. Richardson
+      (4/3 rule) on `product * h^2` gives `40.0578 / 40.0580 / 40.0580 / 40.0575 /
+      40.0558` across `sa = 0.60 ... 0.95`, i.e. over a **16.5x range in rate**.
+      **Richardson in the amplitude for the sixth time in this project.**
+- [x] **It is not discretization.** `dt = 0.5 / 0.25 / 0.125` give products
+      identical to five significant figures (spread `0.622 / 0.623 / 0.624%`), so
+      `dt = 0.5` is already converged and the drift is a property of the grid
+      spacing, not the step.
+- [x] **Threshold-invariance is verified with a formula rather than asserted.**
+      The prefactor is **not** a function of `log(thr/seed)`: at the same ratio
+      `2.3026` it reads `19805` (`thr = 1e-5`) and `12399` (`seed = 1e-4`).
+      Measured, `d(product)/d log(1/thr) = 807.5` and `d(product)/d log(1/seed) =
+      800.6`, both `~ 2/h^2 = 800`, giving
+      `t_branch * rate = (2/h^2) log(1/(thr*seed)) + const`. With the slope
+      **fixed** at `800` by the mechanism and only the offset fitted, that predicts
+      all six `(thr, seed)` configurations to **<= 0.21%**. Across all six the
+      exponent stays at `-1.001 ... -1.003`.
+- [ ] Ship it: the branch/no-branch sign change (the no-branch side stated as
+      **"does not branch by `t = 200 000`"** — it is an absence claim and is
+      horizon-bounded), and `t_branch * rate` asserting **the exponent**, with the
+      prefactor law available as a second, independent check.
+- [ ] Label the post-branching morph structure exploratory, now with the
+      *mechanism* (only three bins are ever seeded) as the stated reason rather
+      than the bare grid-dependence measurement.
 
 ## All
 
@@ -618,7 +731,25 @@ depended on. **Only the scaling travels; the constant does not.**
 | 3d mutants confirmed red | all | **23 / 25**; both survivors provably invisible (see above) |
 | Cost of `tests/test_daisyworld.py` | — | **45 passed in 5.8-9.8 s** serial (17.7 us / RK4 step) |
 | Adaptive-dynamics derivatives vs FD | 0 | <= 7.6e-8 (slice) |
-| `t_branch * rate` log-log slope | -1 | -1.0003 (slice) |
+| Canonical `U = (1/2) mu sm^2 K0 t_max` | — | **`1/2` exactly**: `x(0.5) = 1.849492240597` reproduces the recorded `1.849492`; bisected `U = 0.500000719`, inside 6-digit rounding |
+| Teeth targets, reconstructed vs recorded | 0 | **`+3.04e-7 / +3.19e-7 / +5.4e-17`** on `1.662326 / 1.213061 / 0.000000` — three numbers the convention was not fitted to |
+| Canonical discrepancy, `sm = 0.2 ... 0.00625` | `O(sm)` | **`+3.412e-2 / +1.814e-2 / +9.402e-3 / +4.146e-3 / +2.390e-3 / +1.047e-3`**, all positive, `z = 13.8 ... 16.6` |
+| ...log-log slope, WLS with propagated SEs | 1 | **`+0.9977 +- 0.0225`, `chi2/dof = 1.07`** — 0.10 sigma from 1, **44.6 sigma from 2** |
+| ...`err/sm` about a constant | const | **`0.17723`, `chi2/dof = 0.85`** — no `O(sm^2)` term resolvable over 32x |
+| ...the same fit on common random numbers (bug) | — | `+0.9687 +- 0.0339`, **`chi2/dof = 2.62`**, self-check `0.75/0.16/0.34/0.94/0.55` — one `spawn_rngs` seed reused across the sweep |
+| `SD(sm) / sqrt(sm)` | const | **`0.439 / 0.497 / 0.499 / 0.538 / 0.555`**; `SD = 0.0621` at `sm = 0.0125` vs the slice's implied `0.0598` |
+| Canonical offset at `sm = 0.0125` | — | **`+2.39e-3`**, against the slice's recorded `+0.004` — `sa` and the step law are not recoverable, so the offset does not travel |
+| Canonical teeth, on the **slope** | — | **`+0.0181 +- 0.0007 / +0.0053 +- 0.0002 / -0.0030 +- 0.0001`** — all tens of sigma from zero, so "significantly nonzero" passes all three |
+| Ship config (5 points, `R/4`, 2.3 s), seeds 0-3 | — | **`0.9514 / 0.9070 / 0.9660 / 0.9985`**; band `[0.6, 1.4]` is 4.7 SE below the worst and 204 tooth-SE above the best tooth |
+| ...`4 points, R/4` | — | `1.0453 / 0.7930 / 0.9743 / 0.9986`, spread **0.2523 — rejected as seed-fragile** |
+| Untouched trait bins at `t_branch` | 0 | **bit-identically `0.0`** (158 bins) — the stability guarantee, and it fails loudly if diffusion returns |
+| `t_branch` at `sa = 0.60 ... 0.95`, `ngrid = 161` | — | **`9053.0 / 15455.0 / 28600.5 / 68707.5 / 149822.5`** (refined to `+-0.25`) |
+| `t_branch * rate` spread across `sa` | const | **0.622%** true; **0.594%** at quantum 10; **0.381%** at quantum 100 — *coarse checking flattens it* |
+| ...at `h = 0.1 / 0.05 / 0.025` | `O(h^2)` | **`2.7481% / 0.6216% / 0.1517%`** — ratios **4.421** and **4.098** |
+| ...Richardson to `h -> 0`, `product * h^2` | const | **`40.0578 / 40.0580 / 40.0580 / 40.0575 / 40.0558`** — constant to **0.006%** over a 16.5x rate range |
+| ...at `dt = 0.5 / 0.25 / 0.125` | — | products identical to 5 s.f. — **the drift is not discretization** |
+| `t_branch * rate` log-log slope | -1 | -1.0003 (slice); **`-1.00196 +- 0.00070` (built)**, and `-1.001 ... -1.003` across all six `(thr, seed)` |
+| Prefactor law `(2/h^2) log(1/(thr*seed)) + const` | — | slope **fixed** at `2/h^2 = 800`, offset `-488.1`: predicts all six configs to **<= 0.21%** |
 | Suite after 3c, `-n 6` | — | **410 passed in 453.91 s** |
 | ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so **no 3c regression is visible**. The runs were sequential, so this does not separate "3c is cheap" from "the machine drifted between them" |
 | Repressilator floor test, this session | — | **287.06 s** (with 3c) / **318.02 s** (without) vs **189.81 s** recorded in-suite — machine ~1.5-1.7x slower |
