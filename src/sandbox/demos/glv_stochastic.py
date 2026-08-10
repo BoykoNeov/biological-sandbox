@@ -324,8 +324,13 @@ def act4_refusal_and_bias() -> None:
     _plot_bias_candidates(candidates)
 
 
-# The deepest recorded measurement (T = 500, R = 8, split-coupled, burn = 20).
-# Recorded, not re-run here -- 490 s. Reproduce with the slice or the test.
+# Recorded, not re-run here (490 s): split-coupled, Omega = 100, t_max = 500,
+# R = 8, burn = 20, seeds 100-107. This is the DEEPER of the two configurations
+# in play and NOT the one the suite ships -- tests/test_glv_stochastic.py asserts
+# at t_max = 400 with its own seeds, and separates the transposed-A formula more
+# sharply than the point plotted below (4.10 vs 3.20 sigma on species 1). The
+# figure is about which COMPONENT can see the difference, not about how tightly
+# the shipped test sees it.
 _BIAS_DEMO_OMEGA = 100.0
 _BIAS_DEMO_MEAN = np.array([7.430e-3, 7.440e-3, 4.240e-3])
 _BIAS_DEMO_SEM = np.array([3.402e-4, 1.130e-3, 9.600e-4])

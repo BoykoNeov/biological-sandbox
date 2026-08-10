@@ -486,6 +486,6 @@ depended on. **Only the scaling travels; the constant does not.**
 | Adaptive-dynamics derivatives vs FD | 0 | <= 7.6e-8 (slice) |
 | `t_branch * rate` log-log slope | -1 | -1.0003 (slice) |
 | Suite after 3c, `-n 6` | — | **410 passed in 453.91 s** |
-| ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so 3c's cost is **below this session's noise** |
+| ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so **no 3c regression is visible**. The runs were sequential, so this does not separate "3c is cheap" from "the machine drifted between them" |
 | Repressilator floor test, this session | — | **287.06 s** (with 3c) / **318.02 s** (without) vs **189.81 s** recorded in-suite — machine ~1.5-1.7x slower |
 | Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending — 3d, 3e)* |

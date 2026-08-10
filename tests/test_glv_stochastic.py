@@ -362,6 +362,10 @@ def coupled_bias(
     can never separate, and the answer must be exactly ``0`` — not "small".
     """
     rng = np.random.default_rng(seed)
+    # Root-found per call rather than pinned: identical arguments every replicate,
+    # so the initial counts are shared across the ensemble only as long as the
+    # solver converges identically. It does — but that is why the arms are seeded
+    # from ONE x_star here rather than from two independent computations.
     x_star = equilibrium(reference(Omega=omega).deterministic_params())
     n_e = np.rint(omega * x_star).astype(np.int64)
     n_m = n_e.copy()

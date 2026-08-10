@@ -340,12 +340,13 @@ and the test docstring.
 **The suite timing rule paid off, and the same-session baseline inverted the
 reading.** Suite **410 passed in 453.91 s** at `-n 6` against a recorded 240.59 s —
 which looks alarming until you take the baseline the rule demands: **389 passed in
-544.96 s** with 3c ignored, i.e. the suite is *slower without the new tests*. Since
-21 tests cannot make a suite faster, the whole change is the machine (the
-repressilator floor test, untouched by 3c, reads `287.06 / 318.02 s` this session
-against `189.81 s` recorded in-suite) plus `+-11%` run-to-run spread within the
-session. **3c's cost is below this session's own noise** — a conclusion the `+-30%`
-bracket alone could not have supported.
+544.96 s** with 3c ignored, i.e. the suite is *slower without the new tests*. So
+the comparison to 240.59 s is **uninterpretable** — the repressilator floor test,
+untouched by 3c, reads `287.06 / 318.02 s` this session against `189.81 s`
+recorded in-suite — and **no 3c regression is visible**. Note what this does *not*
+establish: the two runs were sequential, not interleaved, so a monotone drift
+during the session is confounded with the test-set difference. "3c costs less than
+the noise" is the tempting reading and is one inference too far.
 
 Next: 3d (`models/daisyworld.py`), then 3e (adaptive dynamics). See
 `docs/plans/phase3-tasks.md`.
