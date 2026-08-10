@@ -302,6 +302,20 @@ depended on. **Only the scaling travels; the constant does not.**
       Note the slice's `x*`-span figure of 67 did not reproduce (this run: mean
       546) — `max/min` is heavy-tailed, so its **mean is an outlier report, not a
       summary**; the demo prints the median.
+- [x] **Two review catches worth recording, both about applying the discipline to
+      the artifact rather than only to the model.**
+      - *The positive assertion was seed-checked at one seed while its teeth were
+        checked at four.* Priced draw counts predicted `z ~ 4` everywhere; measured,
+        the cheap config's worst seed sat at `3.83` against a guard of `3`. Predicted
+        `z` undershot measured `z` twice in this step. **Seed-verify the assertion
+        you are defending, not just the teeth that defend it.**
+      - *The demo printed exponents fitted from points its own `resolved` guard
+        rejects* (`z = 1.05 ... 2.19` at `S = 200`) beside a reference column, which
+        reads as agreement — the `-0.9279` error reproduced inside the artifact
+        built to explain it. Fixed by printing `resolved` and the per-point `z` and
+        making the under-resolution the act's teaching point: the printed exponents
+        visibly disagree with the resolved reference (`-0.96/-0.84/-0.65` against
+        `-0.88/-1.03/-0.62`), which demonstrates the trap better than prose.
 
 ## 3c — stochastic gLV
 
@@ -392,7 +406,8 @@ depended on. **Only the scaling travels; the constant does not.**
 | Bias exponent, circular `probe = 0.2 / 0.5 / 0.9` | — | **-0.8814 +- 0.0250 / -1.0274 +- 0.0231 / -0.6189 +- 0.0673** (`S = 25...200`) |
 | Bias exponent, elliptic `rho = -0.8 / +0.8` | — | **-0.7733 +- 0.1472 / -0.8404 +- 0.0150** |
 | Same probe (`0.9`) over `S = 12...96` instead | — | **-0.4307 / -0.3396 / -0.4950** — *a different regime; the range is part of the claim* |
-| Elliptic scaling check, seeds 0-3 | decays | **-0.838 / -0.820 / -0.887 / -0.805**, all pass |
+| Elliptic scaling check, seeds 0-3 | decays | **-0.838 / -0.820 / -0.887 / -0.805**, all pass (`min z = 4.97/6.29/6.93/6.88`) |
+| ...at a 45%-cheaper draw count | decays | passes, but `min z = 3.83/4.66/4.42/5.51` — only 28% over the `resolved` guard, so **not shipped** |
 | Teeth exponents (flipped sign / Hermitian) | ~0 | **+0.008...+0.025 / -0.025...-0.009** — bite at 4/4 seeds |
 | Tooth exponent, wrong `R` | ~0 | **-0.34...-0.42** — does *not* bite the scaling check; moved to the direct probe |
 | `eigvals` cost per draw | `S^3` | 0.018 s (`S=200`), 0.15 s (`400`), **2.0 s (`600`) — 13x for 3.4x FLOPs** |

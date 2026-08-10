@@ -446,6 +446,17 @@ def bias_scaling_report(
     asymptotic-grid bound: a claim about *which regime is being measured*, stated
     with the measurement that places it, not a tolerance absorbing an unknown error.
 
+    **Which margin actually applies depends on the probe, and the shallow one is not
+    currently asserted anywhere.** The shipped assertion runs on elliptic
+    ``rho = +0.8`` at ``-0.84 +- 0.10``, so its ``z = 3`` upper bound is ``-0.54`` —
+    a wide margin. The circular ``probe = 0.9`` figure quoted above comes from a
+    200 000-eigenvalue measurement; at *test-affordable* statistics its SE is nearer
+    ``0.15``, putting its bound at ``-0.17`` and almost onto the threshold. So the
+    reference exponents in this docstring should not be read as a licence to assert
+    any probe at this default: a circular scaling assertion would need either more
+    statistics or a smaller ``min_decay_rate``, and choosing between those is a new
+    measurement, not a parameter tweak.
+
     The SE of the exponent is the ordinary-least-squares fit SE — the scatter of the
     points about the line — which needs at least four sizes to be defined at all.
 

@@ -123,22 +123,40 @@ def act2_the_finite_size_bias() -> None:
             row.append(f"{bias:>11.3e}")
         print(f"{n_species:>5} {eigs.size:>8} " + " ".join(row))
 
-    print(f"\n{'probe':>6} {'exponent':>20}  (measured at 200 000 eigenvalues)")
+    print(
+        f"\n{'probe':>6} {'exponent (this run)':>21} {'resolved':>9} {'per-point z':>26}"
+        f"  {'reference (200k eigenvalues)':>28}"
+    )
     reference = {0.2: "-0.8814 +/- 0.0250", 0.5: "-1.0274 +/- 0.0231", 0.9: "-0.6189 +/- 0.0673"}
     for probe, biases in columns.items():
         report = bias_scaling_report(sizes, biases, counts, predicted=probe**2)
+        z_text = " ".join(f"{abs(z):5.2f}" for z in report.bias_z)
         print(
-            f"{probe:>6} {report.exponent:>9.4f} +/- {report.exponent_se:<7.4f}"
-            f"  reference {reference[probe]}"
+            f"{probe:>6} {report.exponent:>10.4f} +/- {report.exponent_se:<7.4f}"
+            f"{str(report.resolved):>9} {z_text:>26}  {reference[probe]:>28}"
         )
     print(
-        "\nREPORTED, NOT ASSERTED. The exponents differ between probes by many sigma and\n"
-        "no theory here predicts any of them. The tempting mechanism -- an O(1/S) bulk\n"
-        "correction plus a slower one inside a Ginibre edge layer of width ~S^-1/2 --\n"
-        "predicts probe = 0.2, deep in the bulk, at -1. It measures -0.88, SHALLOWER\n"
-        "than probe = 0.5, so the ordering is not monotone and the mechanism is wrong.\n"
-        "The suite asserts only that the bias decays faster than S^-0.15, which is a\n"
-        "rate no constant-offset bug reaches."
+        "\nREAD THE 'resolved' COLUMN BEFORE THE 'exponent' ONE. This act's own table is\n"
+        "DELIBERATELY UNDER-RESOLVED: at S = 200 the bias sits at roughly 1-2 binomial\n"
+        "SE, so those points cannot resolve the very quantity they are being fitted to,\n"
+        "and the exponents printed above are not measurements. Resolving them properly\n"
+        "costs ~28 s per circular probe, which is why the reference column -- measured\n"
+        "at 200 000 eigenvalues, every point above z = 3 -- is the real result.\n"
+        "\n"
+        "This is not a shortcut, it is the demonstration. The plan's recorded bias law\n"
+        "(0.6/S, slope -0.9279) was produced exactly this way: a fit whose two largest-S\n"
+        "points sat below their own SE. Re-measured until every point resolved, the same\n"
+        "probe gives 0.70/S and slope -1.0086. A fit will happily consume points that\n"
+        "measure nothing and hand back a confident-looking slope, so bias_scaling_report\n"
+        "carries a 'resolved' guard and the suite refuses a fit that trips it.\n"
+        "\n"
+        "The reference exponents themselves are REPORTED, NOT ASSERTED: they differ\n"
+        "between probes by many sigma and no theory here predicts any of them. The\n"
+        "tempting mechanism -- an O(1/S) bulk correction plus a slower one inside a\n"
+        "Ginibre edge layer of width ~S^-1/2 -- predicts probe = 0.2, deep in the bulk,\n"
+        "at -1. It measures -0.88, SHALLOWER than probe = 0.5, so the ordering is not\n"
+        "monotone and the mechanism is wrong. The suite asserts only that the bias\n"
+        "decays faster than S^-0.15, a rate no constant-offset bug reaches."
     )
 
 

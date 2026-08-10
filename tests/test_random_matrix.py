@@ -359,12 +359,21 @@ def test_elliptic_law_bias_vanishes_with_system_size() -> None:
     """The headline: the finite-``S`` bias decays, at the probe the direct check cannot touch.
 
     At ``rho = +0.8`` the bias is 4-5x any circular one, which is precisely what
-    makes it unassertable by a bias-negligible rule and cheap by a scaling one. The
-    draw counts are priced from the measured bias so every point clears its own SE
-    by about 5x, comfortably above the ``resolved`` guard at 3. Measured exponent
-    across seeds 0-3: ``-0.838 / -0.820 / -0.887 / -0.805``.
+    makes it unassertable by a bias-negligible rule and cheap by a scaling one.
+
+    **The draw counts are seed-verified, not merely priced.** Pricing them from the
+    measured bias predicted every point clearing its SE by ~4x; measured, a cheaper
+    configuration ``(25, 30, 40, 60)`` came in at ``min z = 3.83 / 4.66 / 4.42 /
+    5.51`` for seeds 0-3 — passing, but only 28% above the ``resolved`` guard at 3,
+    and predicted ``z`` has undershot measured ``z`` twice in this module's history.
+    The shipped counts measure ``min z = 4.97 / 6.29 / 6.93 / 6.88`` with exponents
+    ``-0.838 / -0.820 / -0.887 / -0.805``, for about 1.5 s more.
+
+    Teeth get checked at four seeds; so should the positive assertion it defends.
+    A headline test that fails spuriously on an unlucky seed costs far more than
+    the draws that prevent it.
     """
-    biases, counts = _elliptic_biases(0, (25, 30, 40, 60))
+    biases, counts = _elliptic_biases(0, (40, 50, 70, 110))
     report = bias_scaling_report(SCALING_SIZES, biases, counts, predicted=0.25)
     print(report)
     assert report.resolved, str(report)
