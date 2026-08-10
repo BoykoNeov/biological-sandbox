@@ -451,8 +451,11 @@ def test_the_temperature_law_returns_the_pinned_temperatures_at_every_luminosity
         seen_w.append(t_w)
         seen_b.append(t_b)
         # The albedo the cover produces must be the one the balance asked for.
-        # Measured agreement: <= 1 ULP at every L in the band.
-        assert abs(albedo - equilibrium_albedo(p)) <= 2.0 * float(np.spacing(albedo))
+        # Measured agreement: <= 1 ULP at every L in the band. The slack matches
+        # the temperature asserts below (4 ULP rather than 2) because the residual
+        # is libm rounding in `**0.25`, which is not guaranteed identical across
+        # platforms, and 4 ULP is still ~1e-16 on a quantity of order 0.5.
+        assert abs(albedo - equilibrium_albedo(p)) <= 4.0 * float(np.spacing(albedo))
     for values, expected in ((seen_w, t_w_star), (seen_b, t_b_star)):
         spread = max(values) - min(values)
         assert spread <= 4.0 * ulp, f"daisy temperature moved {spread:.3e} K across L"

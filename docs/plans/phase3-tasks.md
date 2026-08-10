@@ -387,13 +387,132 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## 3d — Daisyworld
 
-- [ ] `models/daisyworld.py` — `delta` by Cardano; `analytic_predictions` =
-      `T_w*`, `T_b*`, `x*`, `a_w*(L)` and **`dT_w/dL = 0`**. Must **raise** outside
-      `L in [0.7387224182, 1.3594723713]`.
-- [ ] Order-4 on a **transient** (`t_max = 20`, never 200); record the `beta`-clip
-      `C^0` note (measured not to bite on the `L = 1.0` transient).
-- [ ] Category C: hysteresis, dieback, bare-planet comparison — demo only, never in
-      `analytic_predictions`.
+- [x] `models/daisyworld.py` — `delta` by Cardano (**`np.cbrt`**, not `x ** (1/3)`:
+      one of the two cube-root arguments is negative, `+5.19e6` and `-4.75e6`, and
+      the roots `+173.12 / -168.13` cancel to `4.988`, so ~1.5 digits go and the
+      agreement with a 200-iteration bisection is `5.7e-15` relative, not the last
+      bit). `analytic_predictions` = `a_w`, `a_b`, `x_bare`, `albedo`, `T_e`,
+      `T_w`, `T_b`. Raises outside the band, on `A_w <= A_b`, and on
+      `beta(T_w*) <= gamma`. The **band is closed-form too** — invert the linear
+      albedo balance at `A_lo`/`A_hi` instead of bisecting; reproduces the slice's
+      `0.738722418247 / 1.359472371265` exactly. 45 tests, ~7 s.
+- [x] **`dT_w/dL = 0` cannot be an `analytic_predictions` key** — `validate()`
+      matches each predicted key to an observable's final value, and a derivative
+      with respect to a *parameter* is not an observable of any run (a key with no
+      observable gives `samples = []` -> `nan` -> fail). **And the obvious
+      replacement is a tautology**: "the prediction is the same at every `L`" just
+      reads the source, where `T_w* = T_opt - delta` contains no `L`. Split into
+      two checks that can actually fail: the local temperature law evaluated at the
+      **`L`-dependent cover** (`a_w*` runs `0.024 -> 0.668`) returns the same `T_w`,
+      and **simulated** endpoints from one common bare start agree across `L`.
+- [x] **Richardson in `dt` is the wrong instrument for the second one, measured.**
+      At `L = 1.15` the deviation from `T_w*` is `1.7e-7` while
+      `|T_w(dt) - T_w(dt/2)|` is **exactly `0.0`** — the residual is leftover
+      transient, not discretization error (the Phase-2 lesson verbatim). The
+      two-horizon decay law `|T(t) - T(t/2)| exp(-t / 2 tau)` predicts it at
+      **`1.000 / 1.000 / 1.000 / 1.000 / 1.003`**.
+- [x] **`t_max = 100`, and longer is WORSE.** At `150` and `200` the true residual
+      has hit the floating-point floor (`~8e-13`, ~14 ULP of `T_w`) while the
+      predicted bound keeps shrinking, so the ratio runs to `24.8`, `312`, and at
+      `t_max = 200` up to `3.2e7`. The horizon is part of the claim, and the tooth
+      confirms it: moving it to 200 turns the test red.
+- [x] Order-4 on the transient at `t_max = 20`: **`15.26 / 15.56 / 15.76`** at
+      `dt = 0.4 -> 0.05`, against the plan's recorded `15.3 / 15.6 / 15.8`. **This
+      one travelled** — unlike 3a's `t_max = 20` trap. The `t_max = 200` trap
+      reproduces exactly: `1.283e-13 -> 1.233e-13`, **ratio 1.00 at every `dt`**.
+- [x] **The `beta`-clip `C^0` note is much stronger than "real in principle".** At
+      `L = 1.0` the clip never bites (`beta_raw >= +0.733`) and clipped and smooth
+      integrations are **bit-identical**. At `L = 0.8` the same start drives
+      `beta_raw` to `-0.025` and the same order measurement reads
+      **`58.68 / 0.49 / 2.84`** with non-monotone errors (`9.97e-7`, `1.70e-8`,
+      `3.43e-8`, `1.21e-8`). Both are asserted; **which luminosity the order claim
+      is made at is part of the claim.**
+- [x] Category C: hysteresis, dieback, bare-planet comparison — demo only.
+
+### The invasion window, and the wrong figure claim it fixed
+
+- [x] **The demo's first hysteresis panel was wrong, and only looking at the
+      numbers caught it** — the fifth such figure in the project. The up-ramp's
+      "dead" readings at low `L` were not a second attractor: the state sat at
+      `a_b = 5.4e-144`, still growing exponentially from a denormal, and at
+      `t = 5000` instead of `1000` the same point recovers to `a_b = 0.662`.
+      Extinction in this ODE is **asymptotic** — `a_i` never reaches zero — so an
+      unfloored ramp reports relaxation time as bistability. Fixed with a `1e-6`
+      propagule floor, which makes "dead" mean "cannot grow from a seed".
+- [x] **`invasion_luminosities` — a second closed form, answering a different
+      question from the band.** A rare species grows on a bare planet iff
+      `beta(T_i) > gamma`, i.e. `T_i` inside `T_opt +- sqrt((1-gamma)/k)`; a bare
+      planet has albedo `A_g` whatever `L`, so `T_i^4` is *linear* in `L` and
+      inverts directly. White invades for `L in [0.8332000704, 1.2079168175]`,
+      black for `[0.7058188359, 1.0805355830]`.
+- [x] **So the bistability is one-sided, and that is now a number rather than an
+      impression.** Genuine bistability needs the interior state to exist *and*
+      the dead planet to be uninvadable: hot end `L in (1.2079, 1.3595)`, width
+      **`+0.151556`**; cold end width **`-0.032904`, i.e. EMPTY** — invadability
+      reaches *below* the band there. The demo now labels each ramp row `BIST`
+      (interior vs dead), `BIST-bdy` (a single-species boundary state vs dead,
+      outside the band) or `(slow)` — and `L = 1.20`, which sits `0.008` inside the
+      white window, is correctly marked `(slow)` rather than counted as
+      bistability.
+- [x] **The basin fact explains the extinctions**: from `(0.01, 0.01)` the planet
+      reaches the interior state for `L in [0.8, 1.2]` and dies for `L >= 1.25`. At
+      `L = 1.20` it is the **white** daisies that seed (`beta = 0.350`) while black
+      cannot (`0.000`). `analytic_predictions` does **not** refuse on reachability —
+      that is a basin question, not an existence one.
+
+### Mutants: 23/25 red, and every survivor is a finding
+
+- [x] **The headline mutant behaves exactly as designed.** Shifting `t_opt` by 1 K
+      **in the params**, so the closed form and the RHS move *together*, leaves
+      `|rhs(y*)| = 1.8e-16` — a perfectly good fixed point of the wrong planet. It
+      kills only `test_the_recorded_constants_reproduce`, the band test, the three
+      `a_w*(L)` literals and two band-boundary tests. The hand-written RHS, the
+      Newton root-find, the equilibrium conditions, **all three `validate()` runs**,
+      both invariance tests and the order test stay **green**. The recorded
+      literals are the only thing standing between this model and a wrong planet.
+- [x] **Two survivors are provably invisible, not gaps.** `bare_fraction` reading
+      `beta(T_b)` instead of `beta(T_w)` cannot be caught — the reduction makes them
+      equal, and a test asserts that. `analytic_predictions` reading the cover's
+      temperatures instead of Cardano's cannot be caught by `validate()` either,
+      because `test_the_temperature_law_returns_the_pinned_temperatures_at_every_
+      luminosity` has already pinned the two routes together. **The model docstring
+      claimed `validate()` was what checked the cross-route agreement; that was
+      wrong and is corrected**, and the albedo leg — the one part of the round trip
+      nothing checked — was added.
+- [x] **A third mutant was a live trap, and it corrupted a run before it was
+      understood (it is RED now, after the sweep below).** `scale = S (1 - A_g)` mutated to `S A_g` is a **no-op** with
+      the W&L constants, because `A_g = 0.5` and `1 - A_g = 0.5` are the same
+      number. A killed run left that mutation on disk; the baseline stayed green
+      *because the mutation does nothing*, and the next run read the mutated file
+      as pristine. Fixed by sweeping `albedo_ground in (0.5, 0.4)` in the invasion
+      test — Phase 2's "**sweep the constant that the probe happens to land on**"
+      for the third time, and the second time in this file after the white/black
+      albedo swap (which leaves `x*` **bit-identical** and merely exchanges
+      `T_w*`/`T_b*`, so only the `a_w*(L)` literals catch it).
+- [x] **Two process lessons from that corruption.** A killed process runs no
+      `finally`, so a mutation runner must (a) **verify the baseline is green
+      before it starts** and (b) restore from **git**, not from an in-memory copy —
+      and the files must be *committed first*, because `git status` cannot protect
+      an untracked file. Both are now in the runner. (It also has to run in
+      **batches of ~5**: this environment kills a subprocess after ~2-3 minutes.)
+
+### The figure, twice — and the second one was caught by looking
+
+- [x] **Panel 1 drew its own headline instead of measuring it.** The first draft
+      plotted `[t_w_star] * len(lums)` — one value repeated — under the title *"The
+      daisy temperatures are flat"*. Flatness by construction, which is the Phase-2
+      Turing panel verbatim (stripes from a hand-seeded mode presented as a
+      selected one). It now plots the per-`L` values **computed at each `L`'s own
+      cover**. The picture is identical (the variation is `~1e-13` on a 290 K axis);
+      the difference is whether the line demonstrates the claim or restates it.
+- [x] **Panel 3 said every gap between the two ramps was bistability.** The act-5
+      text spends a paragraph refusing exactly that for `L = 1.20`, but a figure
+      gets looked at without its text. The panel now **shades the closed-form
+      window** `(1.208, 1.359)`, and the down-ramp visibly jumps onto the
+      no-daisies curve right at its left edge.
+- [x] Panel 3's title was **clipped** at the right edge on the first render.
+      Checked by opening the PNG, which is the only way that class of defect
+      surfaces.
 
 ## 3e — adaptive dynamics
 
@@ -481,11 +600,29 @@ depended on. **Only the scaling travels; the constant does not.**
 | Ship config gap, `Omega = 100` `T = 400` `R = 8` | — | correct `<= 1.418`, transpose `>= 4.780`, naive `>= 7.782` (4 seed-sets) — **`z = 3` sits in it** |
 | ...the same at `T = 200` | — | correct `<= 1.675`, transpose `>= 3.025` — **clears `z = 3` by 0.8%; seed-lucky, not shipped** |
 | Wrong-formula error at species 0 / 1 / 2 | — | no-solve `+44/+49/+90%`; transposed `A` **`-1.7%`**`/-43/+57%`; `x*/Omega` **`+1.0%`**`/-35/+60%` |
-| Daisyworld `\|rhs(y*)\|` | 0 | <= 3.68e-16 (slice) |
-| Daisyworld `dT_w/dL` | 0 | +0.000e+00 (slice) |
+| Daisyworld `\|rhs(y*)\|` | 0 | <= 3.68e-16 (slice); **<= 3.24e-16 (built, `L = 0.75...1.35`)** |
+| Daisyworld `dT_w/dL` | 0 | +0.000e+00 (slice); **exactly `+0.000e+00` at every `L` and every `h` except `L = 1.30`, where it is a 1-ULP wobble (`5.684e-14`) divided by `2h`** |
+| Daisyworld `delta`, Cardano vs 200x bisection | 0 | **5.698e-15 relative** (cube roots `+173.119 / -168.131` cancelling to `4.988`) |
+| Daisyworld band, closed form vs the slice's bisection | — | **0.738722418247 / 1.359472371265** — reproduces to every recorded digit |
+| Daisyworld order-4, `t_max = 20`, `L = 1.0` | 4 | **15.26 / 15.56 / 15.76** (plan recorded 15.3/15.6/15.8 — **this one travelled**) |
+| ...at `t_max = 10 / 40 / 200` | — | `15.77/15.84/15.91`; `12.69/14.38/15.11` (roundoff at 7e-15); **`1.00/1.00/1.01` — the attractor trap reproduces** |
+| ...at `L = 0.8`, where the `beta` clip bites | — | **58.68 / 0.49 / 2.84**, errors non-monotone. `beta_raw` reaches `-0.025` |
+| `beta` clip at `L = 1.0`: clipped vs smooth | identical | **bit-identical**, `beta_raw >= +0.733` |
+| Simulated `T_w` spread over `L`, bare start, `t = 100` | 0 | **2.141e-6 K**, against `T_e` spread **2.179068 K** — ratio **1.02e6** |
+| Decay-law predicted / true residual, `t_max = 100` | 1 | **1.000 / 1.000 / 1.000 / 1.000 / 1.003** |
+| ...at `t_max = 150 / 200` | — | `1.42 / 312 / 24.8 / 1.01 / 1.00`; up to **3.2e7** — the true residual is on the fp floor (`~8e-13`), so **longer is worse** |
+| Richardson in `dt` on the same quantity | — | **exactly `0.0` at `L = 1.15`** where the deviation is `1.7e-7` — blind to a transient |
+| Daisyworld Jacobian, slow `tau` across the band | — | `51.0` (`L=0.75`), `4.33` (`0.95`), `8.76` (`1.20`), **`151.1` (`1.35`)** — real and negative throughout |
+| Invasion window, white / black | — | **`[0.8332000704, 1.2079168175]` / `[0.7058188359, 1.0805355830]`** |
+| Genuine bistability, hot end / cold end | — | width **`+0.151556`** / **`-0.032904` (EMPTY)** — the bistability is one-sided |
+| 3d mutants confirmed red | all | **23 / 25**; both survivors provably invisible (see above) |
+| Cost of `tests/test_daisyworld.py` | — | **45 passed in 5.8-9.8 s** serial (17.7 us / RK4 step) |
 | Adaptive-dynamics derivatives vs FD | 0 | <= 7.6e-8 (slice) |
 | `t_branch * rate` log-log slope | -1 | -1.0003 (slice) |
 | Suite after 3c, `-n 6` | — | **410 passed in 453.91 s** |
 | ...same-session baseline, 3c ignored | — | **389 passed in 544.96 s** — *slower without the new tests*, so **no 3c regression is visible**. The runs were sequential, so this does not separate "3c is cheap" from "the machine drifted between them" |
 | Repressilator floor test, this session | — | **287.06 s** (with 3c) / **318.02 s** (without) vs **189.81 s** recorded in-suite — machine ~1.5-1.7x slower |
-| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending — 3d, 3e)* |
+| Suite after 3d, `-n 6` | — | **455 passed in 180.82 s** (floor test **137.26 s**) |
+| ...same-session baseline, 3d ignored | — | **410 passed in 217.12 s** (floor test **158.58 s**) |
+| ...what that does and does not say | — | The floor test, **untouched by 3d**, moved **15.5%** between the two runs, so the totals are not attributable to the test set. **No 3d regression is visible**; nothing stronger is claimable. Cross-session it is worse still: the same test read **287.06 s** last session against **137.26 s** now, a **2.1x** machine swing, so the 453.91 s recorded after 3c is uninterpretable here. Runs were sequential, not interleaved, so monotone drift is confounded with the test-set difference |
+| Suite after Phase 3, `-n 6` | < baseline + new, **re-timed same-session** | *(pending — 3e)* |

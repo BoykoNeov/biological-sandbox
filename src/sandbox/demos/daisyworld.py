@@ -153,7 +153,10 @@ def act2_regulation() -> list[tuple[float, float, float, float, float]]:
         p = DaisyworldParams(luminosity=luminosity)
         a_w, a_b = interior_equilibrium(p)
         _, t_e, t_w, t_b = temperatures(a_w, a_b, p)
-        rows.append((luminosity, float(a_w), float(a_b), t_e, t_w))
+        # t_w and t_b are carried per-L, COMPUTED at that L's cover, because the
+        # figure plots them. Plotting a single value repeated would draw the
+        # flatness the panel claims to show -- see _plot.
+        rows.append((luminosity, float(a_w), float(a_b), t_e, t_w, t_b))
         print(
             f"  {luminosity:>6.2f} {a_w:>13.9f} {a_b:>13.9f} "
             f"{equilibrium_albedo(p):>10.6f} {t_w:>16.12f} {t_b:>16.12f}"
@@ -395,10 +398,17 @@ def _plot(regulation_rows, overcompensation_rows, ramp_up, ramp_down) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
 
     # Panel 1: the temperatures, pinned, against the cover that is not.
+    #
+    # The two daisy series are the values COMPUTED at each L's own cover, not
+    # `[t_w_star] * len(lums)`. The first draft did the latter, which draws the
+    # flatness this panel exists to show -- the same defect as the Phase-2 Turing
+    # panel whose stripes were a hand-seeded mode presented as a selected one. The
+    # variation is ~1e-13 on a 290 K axis so the picture is identical either way;
+    # the difference is whether the line demonstrates the claim or restates it.
     lums = [r[0] for r in regulation_rows]
     ax = axes[0]
-    ax.plot(lums, [t_w_star] * len(lums), "o-", color="tab:blue", label="T_w* (white)")
-    ax.plot(lums, [t_b_star] * len(lums), "s-", color="tab:red", label="T_b* (black)")
+    ax.plot(lums, [r[4] for r in regulation_rows], "o-", color="tab:blue", label="T_w (white)")
+    ax.plot(lums, [r[5] for r in regulation_rows], "s-", color="tab:red", label="T_b (black)")
     ax.plot(
         [r[0] for r in overcompensation_rows],
         [r[1] for r in overcompensation_rows],
@@ -458,10 +468,27 @@ def _plot(regulation_rows, overcompensation_rows, ramp_up, ramp_down) -> None:
     )
     bare = [bare_planet_temperature(DaisyworldParams(luminosity=r[0])) for r in ramp_up]
     ax.plot([r[0] for r in ramp_up], bare, ":", color="0.5", label="no daisies")
+
+    # Shade the window where bistability is GENUINE, straight from the closed form.
+    # Without it the panel says "every gap between the two ramps is history
+    # dependence", which is the claim act 5's text spends a paragraph refusing:
+    # the gap near L = 1.20 is a slow transient, because white can still invade
+    # there. A figure gets looked at without its text, so the distinction has to
+    # survive on the axes.
+    windows = invasion_luminosities(p0)
+    invade_hi = max(high for _, high in windows.values())
+    ax.axvspan(
+        invade_hi,
+        high,
+        color="tab:green",
+        alpha=0.12,
+        label=f"bistable: L in ({invade_hi:.3f}, {high:.3f})",
+    )
+    ax.axvline(invade_hi, color="tab:green", lw=0.8, ls="-.")
     ax.set_xlabel("luminosity L")
     ax.set_ylabel("T_e (K)")
-    ax.set_title("CATEGORY C: hysteresis and dieback\n(reported, never asserted)")
-    ax.legend(fontsize=7.5, frameon=False)
+    ax.set_title("CATEGORY C: hysteresis and dieback\n(shaded: both attractors exist)")
+    ax.legend(fontsize=7, frameon=False, loc="upper left")
     ax.grid(alpha=0.3)
 
     fig.suptitle(
