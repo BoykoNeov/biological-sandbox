@@ -188,7 +188,14 @@ pins `T_w, T_b = T_opt -+ delta` with `delta` from a cubic in `q` alone, so
 **independent of luminosity** — `dT_w/dL` measured *exactly* `0`, and `dT_e/dL` is
 *negative*, i.e. overcompensation rather than mere flattening.
 
-**3a is built** — `glv` and `lotka_volterra`, 47 tests in ~6 s. gLV carries the
+**3a is built** — `glv` and `lotka_volterra`, 47 tests in ~6 s; suite **357 passed**
+(310 + 47) in 171 s at `-n 6`. That 171 s is a **regression check, not a timing**:
+it is *below* the 203-232 s baseline despite 47 new tests, and the run shared the
+machine, so it settles nothing. Step 18 re-times cleanly with `--durations=8` — if
+the repressilator floor test also dropped from its recorded 162.17 s it is the
+machine, and if the floor held while the total fell then xdist packing changed
+when 47 fast tests entered collection, which this suite has been burned by once.
+gLV carries the
 interior equilibrium (validated on *two* hand-built systems, because the 3-species
 case is self-consistency only and the 2-species symmetric closed form
 `x* = 1/(1+a)` is not), the community matrix `diag(x*)A` checked signed against

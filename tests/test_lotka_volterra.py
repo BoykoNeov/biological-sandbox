@@ -193,8 +193,25 @@ def test_validate_conserves_v(amp):
 @pytest.mark.parametrize("amp", [0.4, 4.0])
 def test_v_is_conserved_along_the_whole_orbit_not_just_at_the_endpoint(amp):
     # The endpoint check above could in principle be passed by a drift that wanders
-    # off and happens to come back. This bounds the WHOLE series, and its tolerance
-    # is again the measured dt-difference rather than a typed epsilon.
+    # off and happens to come back. This bounds the WHOLE series against the
+    # endpoint dt-difference: both are the same O(dt^4) integration error, so their
+    # ratio is O(1), and the claim is "V's wandering along the orbit is no worse
+    # than the integration error the endpoint check already sees".
+    #
+    # The 50 is the one typed factor in 3a, so here is what it is worth. Measured
+    # excursion/endpoint_bound = 2.97 / 12.63 / 1.56 / 1.10 at amp = 0.4 / 1.2 /
+    # 4.0 / 8.0 -- so 50 carries 17x and 32x slack at the two amplitudes tested,
+    # and 4x at the worst point across a 20x amplitude range. NOT monotone in
+    # amplitude, which is why the tested pair does not bracket it and the range was
+    # measured rather than assumed.
+    #
+    # The obvious "more derived" alternative was measured and REJECTED: bounding
+    # the finer series' excursion against the coarse-fine difference gives ratios
+    # of 0.05-0.07, because excursion(dt/2) is ~5% of excursion(dt) and the
+    # difference is therefore dominated by the coarse term. That bound collapses
+    # into "the finer run is not much worse than the coarser one" -- a threshold
+    # almost nothing can fail. A derived-looking form is not automatically the
+    # stronger one.
     def series_v(dt: float) -> np.ndarray:
         _, series = run_lv(LVParams(amp=amp, t_max=100.0, dt=dt))
         return np.asarray(series["V"])

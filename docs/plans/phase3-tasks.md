@@ -169,6 +169,12 @@ depended on. **Only the scaling travels; the constant does not.**
 
 ## 3b — the random community matrix
 
+- [ ] **Pin the ensemble construction against one recorded row before writing any
+      tolerance** — the three-minute check that caught the `A` convention in 3a,
+      and the discipline 3a's three non-transferring constants argue for. The
+      recorded `z <= 1.38`, `z <= 2.31` and bias slope `-0.9279` depend on the draw
+      convention, `C`, and the ellipse-to-disc mapping at `t = 0.5`, none of which
+      the slice fully recorded. See [[numbers-travel-with-their-estimator]].
 - [ ] `core/random_matrix.py` — May/elliptic ensemble; circular- and elliptic-law
       fraction checks with **binomial** SE and `S` **derived** from
       `0.6/S << SE(n)`. **NOT a `Model`** — no `step`, no `observables`, no
@@ -234,6 +240,13 @@ depended on. **Only the scaling travels; the constant does not.**
 ## All
 
 - [ ] Re-time the suite; update `CLAUDE.md`, memory, docs; commit and push.
+      **Use `--durations=8` and settle the open 3a anomaly:** the post-3a run read
+      **171.05 s** against a 203-232 s baseline — *faster* despite 47 new tests, on
+      a machine that was not idle. If the repressilator floor test also dropped
+      from its recorded 162.17 s, it is the machine and nothing else. If the floor
+      held near 162 s while the total fell, **xdist packing changed when 47 fast
+      tests entered collection** — a real finding, and the same mechanism that made
+      the Phase-1 `-n` "fix" measure 75% worse.
 
 ## Measurements to record as they land
 
