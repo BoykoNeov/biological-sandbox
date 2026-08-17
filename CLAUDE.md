@@ -227,6 +227,42 @@ Richardson extrapolation of `amp/sqrt(eps)` is still drifting, so "supercritical
 consistent with `1/2` with `O(eps)` corrections" is the honest claim and the slope
 number is labelled as not being the exponent.
 
+**2c's one deferral with a trigger condition was taken, and it measured out: Gray-Scott
+CANNOT carry wavelength selection, for a structural reason.** The deferral named
+Gray-Scott's genuine Turing sliver as the second caller that would justify promoting
+the spectral helpers to `core/`. Measured
+(`docs/plans/phase2c-gray-scott-selection-measurement.md`), its Turing bifurcation at
+its own validated point is **subcritical**: the saturated amplitude is already `0.580`
+at `d/d_c = 1.02` where the growth rate is `9.8e-04` (Schnakenberg's is `0.379` and
+falling, in a *single* mode at fraction `1.000`, four seeds unanimous), a pattern formed
+above onset **survives at `d/d_c = 0.95`** where white noise decays to exactly zero
+(bistability, the hard signature), and the emergent power spreads over **twelve
+comparable modes** (`0.05-0.14` peak fraction against Schnakenberg's `0.53-1.00`). At
+`d/d_c = 1.001` the fastest linear mode is 43 and what appears is 6 to 10. So the
+helpers stay in the model, nothing needs building, and **Phase 2's finding recurs one
+layer in**: there, Pearson's parameters had no Turing state; here the Turing state is
+genuine and the *pattern* still is not one linear theory predicts. **A Turing
+instability is necessary but not sufficient — supercriticality is the load-bearing
+precondition, and 2c only ever checked it where it held.**
+
+**The instrument finding is the transferable half, and it is "green for the wrong
+reason" in a new place: a calibrated screen was confidently wrong one model over.** A
+linear-growth estimator (`argmax_j (log a_j + lambda_j T)`, no integration) was scored
+against 2c's *known* answer first: it reproduced Schnakenberg's measured scatter to 16%
+(`0.728` against `0.629`), its margin (`~16` against a measured `9.08 -> 15.95 SE`) and
+its collapse at fine resolution (`2.88 -> 1.22 -> 0.30`). Pointed at Gray-Scott it
+predicted `+7.8 SE`; integration returned **`-2.4 SE`** — the mean sitting nearer the
+hypothesis the claim exists to *reject*. What failed was not its precision but its
+**applicability**, silently, because linearity does not survive a subcritical branch.
+Three checks cleared the integration first, since half of 2c's measurement document was
+lost to a step-size artefact: bit-identical selected modes over a **16x** range of `dt`,
+the field frozen to `6.9e-06` by `0.75 T`, and identical answers at 20, 60, 200 and 600
+e-folds. Also recorded: the band is *wider* than 2c's worry (10-14 modes, `q` spanning
+4.75x), so the failure is flatness, not scarcity — and no `ndim` was added to Gray-Scott
+and no refusal written, because `initial` admits only `"mode"` and `"pearson"` and so
+the model **cannot be asked** the question. A test pins that (`+1`, 32 in the module),
+verified red by mutation.
+
 **Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c), and its three
 recorded deferrals are now built too.** The record with every number is
 `docs/plans/phase4-tasks.md` (§9 for the deferrals); the plan is

@@ -38,6 +38,7 @@ from sandbox.core.protocol import Experiment, Model, ValidatableModel
 from sandbox.core.registry import get_model
 from sandbox.core.validation import validate
 from sandbox.models.gray_scott import (
+    INITIAL_CONDITIONS,
     GrayScott,
     GrayScottParams,
     dispersion,
@@ -139,6 +140,14 @@ def test_the_chosen_point_is_a_genuine_turing_point() -> None:
     All three are required, and most of the ``(F, k)`` plane fails at least one —
     which is why the validated point sits where it does rather than at Pearson's
     famous parameters.
+
+    **And all three together are still not sufficient for a wavelength**, which was
+    measured after the fact rather than assumed
+    (``docs/plans/phase2c-gray-scott-selection-measurement.md``): the bifurcation here
+    is *subcritical*, so what emerges is a large-amplitude localized structure whose
+    power sits in a dozen comparable modes, and linear theory predicts no wavelength
+    for it. These three conditions license the ``lambda(q)`` claim this file validates,
+    and nothing more. See :func:`test_this_model_cannot_be_asked_for_a_wavelength`.
     """
     params = _params()
     u_star, v_star = homogeneous_state(params)
@@ -349,6 +358,30 @@ def test_the_exploratory_initial_condition_is_refused_a_prediction() -> None:
     params = _params(feed=0.037, kill=0.060, initial="pearson")
     with pytest.raises(ValueError):
         GrayScott().analytic_predictions(params)
+
+
+def test_this_model_cannot_be_asked_for_a_wavelength() -> None:
+    """The wavelength-selection question has no code path here, and that is deliberate.
+
+    Selection is the claim of ``schnakenberg``, whose bifurcation is supercritical.
+    Gray-Scott's, at this very Turing point, is **subcritical** — measured in
+    ``docs/plans/phase2c-gray-scott-selection-measurement.md``: a pattern formed above
+    onset still stands at ``d/d_c = 0.95`` where white noise decays to exactly zero,
+    the saturated amplitude never approaches zero at onset (``0.580`` at
+    ``d/d_c = 1.02``), and the emergent power spreads over a dozen comparable modes.
+    So there is no wavelength for linear theory to predict, and no refusal to write:
+    ``initial`` simply admits no random-noise condition to ask it through.
+
+    This test exists so that stays true by decision rather than by accident. Adding a
+    ``"noise"`` initial condition here with selection in mind breaks it, and the
+    docstring is the reason why — the measurement, not a preference.
+    """
+    assert set(INITIAL_CONDITIONS) == {"mode", "pearson"}, (
+        "a new Gray-Scott initial condition needs a reason that survives the "
+        "subcritical measurement; wavelength selection is not one"
+    )
+    with pytest.raises(ValueError, match="initial must be one of"):
+        _params(initial="noise")
 
 
 # ---------------------------------------------------------------------------

@@ -142,3 +142,15 @@ absorbed:
 - **Promoting the spectral helpers to `core/`.** They live in the model until a
   second model wants them; Gray-Scott's genuine Turing sliver is the candidate, and
   that is a later decision with a real caller behind it.
+
+  > **Taken, and the candidate measured out** —
+  > `docs/plans/phase2c-gray-scott-selection-measurement.md`. Gray-Scott's Turing
+  > bifurcation at its own validated point is **subcritical**: the amplitude is already
+  > `0.580` at `d/d_c = 1.02` where the growth rate is `9.8e-04` (Schnakenberg's is
+  > `0.379` and falling, in a *single* mode at fraction `1.000`), a formed pattern
+  > survives at `d/d_c = 0.95` where noise decays to exactly zero, and the emergent
+  > state spreads its power over twelve comparable modes. So there is no wavelength for
+  > linear theory to have predicted, the second caller does not exist, and **the helpers
+  > stay in the model.** The rule is unchanged, not waived — they move when a real
+  > caller wants them. Phase 2's finding, one layer in: a genuine Turing instability is
+  > necessary but not sufficient, and **supercriticality is the missing precondition**.

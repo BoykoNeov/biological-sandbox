@@ -24,6 +24,27 @@ interior maximum ``lambda(q*) > 0`` at ``q* > 0`` — occupy a razor sliver of t
 plane: ``F in [0.049, 0.117]``, ``k in [0.054, 0.062]``, with the ``k`` window at
 fixed ``F`` only ~0.5% wide. The defaults sit at ``(0.074, 0.062)``.
 
+**Those three conditions all hold here and are still not enough to give this model a
+wavelength**, which is measured rather than argued
+(``docs/plans/phase2c-gray-scott-selection-measurement.md``). The bifurcation is
+**subcritical**: the saturated amplitude is already ``0.580`` at ``d/d_c = 1.02``,
+where the growth rate is ``9.8e-04`` and Schnakenberg's amplitude is ``0.379`` and
+falling; a pattern formed above onset **survives at** ``d/d_c = 0.95``, where the
+homogeneous state is linearly stable and white noise decays to exactly zero; and the
+emergent state spreads its power over twelve comparable modes (peak fraction
+``0.05-0.14`` against Schnakenberg's ``0.53-1.00``). So the pattern here is a
+large-amplitude localized structure rather than a perturbation of the homogeneous
+state, and linear stability analysis sets no wavelength for it — at ``d/d_c = 1.001``
+the fastest linear mode is 43 and what appears is 6 to 10.
+
+This is Phase 2's finding one layer in. There, Pearson's parameters had no Turing
+state at all; here the Turing state is genuine and the *pattern* is still not one
+linear theory predicts. **A Turing instability is necessary but not sufficient —
+supercriticality is the load-bearing precondition**, which is why wavelength selection
+lives in ``schnakenberg`` (supercritical, verified) and why this model's ``initial``
+offers no random-noise condition: it cannot be asked the selection question, so there
+is no refusal here to look for.
+
 **The prediction uses the DISCRETE Laplacian's eigenvalue.** What is integrated is
 the 5-point stencil, whose eigenvalue ``-(4D/h^2) sin^2(q h/2)`` differs from the
 continuum ``-D q^2`` by 408% at ``n = 64, j = 12`` — and the two even *disagree
