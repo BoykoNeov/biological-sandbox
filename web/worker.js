@@ -266,6 +266,19 @@ self.onmessage = async (event) => {
       case "build":
         payload = build;
         break;
+      case "resources":
+        // The worker downloads the runtime, numpy and the wheel -- and none of
+        // that appears in the PAGE's resource timeline, because it happened on
+        // this thread. A cold-load measurement taken from the main thread alone
+        // would miss almost every byte that matters.
+        payload = performance.getEntriesByType("resource").map((entry) => ({
+          name: entry.name.split("/").slice(-1)[0],
+          transfer_bytes: entry.transferSize,
+          encoded_bytes: entry.encodedBodySize,
+          decoded_bytes: entry.decodedBodySize,
+          duration_ms: entry.duration,
+        }));
+        break;
       case "describe":
         payload = pyCall("web_describe");
         break;

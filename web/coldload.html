@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase 4 — the cold first load</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header>
+  <h1>The cold first load</h1>
+  <p class="lede">
+    The one measurement that could still have overturned the browser decision, and
+    the one both earlier slices skipped. They timed a <em>warm</em> load from a
+    local server on a desktop and said plainly that neither number transfers.
+  </p>
+  <p class="lede">
+    What is measured here is <strong>time to a usable page at a known byte
+    rate</strong> — the server paces its writes, and the page reports every byte
+    that crossed, including the ones the worker fetched on its own thread and that
+    the page's own resource timeline cannot see.
+  </p>
+  <div class="card note">
+    <h3><span class="badge">WHAT THIS IS NOT</span> a real network</h3>
+    <p>
+      A paced local server models the <strong>throughput</strong> term of a slow
+      link and nothing else. There is no latency, no TCP slow start, no packet
+      loss, no CDN, no mobile radio. A real 5 Mbit/s connection is worse than this
+      number, not better, and how much worse is not established here.
+    </p>
+  </div>
+  <dl id="report" class="readout"></dl>
+  <h2>Every byte</h2>
+  <pre id="table"></pre>
+  <pre id="log"></pre>
+</body>
+
+<script type="module">
+import { WorkerClient, fmt } from "./client.js";
+
+const say = (line) => {
+  document.getElementById("log").textContent += line + "\n";
+  console.log("[cold] " + line);
+};
+
+const params = new URLSearchParams(location.search);
+const label = params.get("label") || "unlabelled";
+
+const started = performance.now();
+const client = new WorkerClient("./worker.js");
+say(`cold load, label=${label} ...`);
+const build = await client.send("boot");
+const readyAt = performance.now() - started;
+
+// Ready is not the same as usable: the page is usable when it can produce the
+// thing the reader came for. So the clock keeps running through one real unit of
+// work -- create a run, take some steps, get points back -- and reports both.
+const spec = {
+  model: "repressilator",
+  params: { alpha: 216.0, alpha0: 0.216, n_hill: 2.0, beta: 1.0, Omega: 30.0, t_max: 15.0 },
+  replicates: 2,
+  seed: 1,
+  max_steps: 300000,
+  record_every: 200,
+};
+const created = await client.send("create", spec);
+await client.send("advance", { run_id: created.run_id, n_steps: 20000 });
+const drained = await client.send("drain", { run_id: created.run_id });
+const firstPointsAt = performance.now() - started;
+await client.send("close", { run_id: created.run_id });
+
+const workerResources = await client.send("resources");
+const pageResources = performance.getEntriesByType("resource").map((entry) => ({
+  name: entry.name.split("/").slice(-1)[0],
+  transfer_bytes: entry.transferSize,
+  encoded_bytes: entry.encodedBodySize,
+  decoded_bytes: entry.decodedBodySize,
+  duration_ms: entry.duration,
+}));
+const all = [...pageResources, ...workerResources];
+const sum = (key) => all.reduce((total, entry) => total + (entry[key] || 0), 0);
+
+const transfer = sum("transfer_bytes");
+const decoded = sum("decoded_bytes");
+const effective = (transfer * 8) / (readyAt / 1000) / 1e6;
+
+document.getElementById("table").textContent =
+  ["file".padEnd(48) + "over the wire".padStart(15) + "uncompressed".padStart(15), ""]
+    .concat(
+      all
+        .sort((a, b) => b.transfer_bytes - a.transfer_bytes)
+        .map(
+          (entry) =>
+            entry.name.slice(0, 46).padEnd(48) +
+            `${(entry.transfer_bytes / 1e6).toFixed(2)} MB`.padStart(15) +
+            `${(entry.decoded_bytes / 1e6).toFixed(2)} MB`.padStart(15)
+        )
+    )
+    .concat([
+      "",
+      "TOTAL".padEnd(48) +
+        `${(transfer / 1e6).toFixed(2)} MB`.padStart(15) +
+        `${(decoded / 1e6).toFixed(2)} MB`.padStart(15),
+    ])
+    .join("\n");
+
+const rows = [
+  ["label", label],
+  ["over the wire", `${(transfer / 1e6).toFixed(2)} MB  (uncompressed ${(decoded / 1e6).toFixed(2)} MB)`],
+  ["files", String(all.length)],
+  ["time to a running interpreter", `${(readyAt / 1000).toFixed(2)} s`],
+  [
+    "time to the first simulated points",
+    `${(firstPointsAt / 1000).toFixed(2)} s  ` +
+      `(${drained.replicates[0].t.length} points of replicate 0)`,
+  ],
+  ["effective rate", `${effective.toFixed(1)} Mbit/s over the boot`],
+  [
+    "boot breakdown",
+    `runtime ${fmt(build.timings.runtime_s)} s · numpy ${fmt(build.timings.numpy_s)} s · ` +
+      `wheel ${fmt(build.timings.wheel_s)} s · import ${fmt(build.timings.import_s)} s`,
+  ],
+];
+const el = document.getElementById("report");
+el.innerHTML = "";
+for (const [key, value] of rows) {
+  const dt = document.createElement("dt");
+  dt.textContent = key;
+  const dd = document.createElement("dd");
+  dd.textContent = value;
+  el.append(dt, dd);
+}
+say(`ready in ${(readyAt / 1000).toFixed(2)} s, first points at ${(firstPointsAt / 1000).toFixed(2)} s`);
+
+const post = params.get("autorun");
+if (post) {
+  await fetch(`/results/${post}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      {
+        label,
+        transfer_bytes: transfer,
+        decoded_bytes: decoded,
+        ready_s: readyAt / 1000,
+        first_points_s: firstPointsAt / 1000,
+        effective_mbit: effective,
+        build,
+        resources: all,
+      },
+      null,
+      2
+    ),
+  });
+  say("posted");
+}
+</script>
+</body>
+</html>
