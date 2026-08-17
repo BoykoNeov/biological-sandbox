@@ -386,4 +386,4 @@ def _pearson_blob(params: GrayScottParams, rng: Generator) -> np.ndarray:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = GrayScott()
-register("gray_scott", MODEL)
+register("gray_scott", MODEL, GrayScottParams)

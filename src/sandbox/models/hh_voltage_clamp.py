@@ -164,4 +164,4 @@ class HHVoltageClamp:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = HHVoltageClamp()
-register("hh_voltage_clamp", MODEL)
+register("hh_voltage_clamp", MODEL, HHVoltageClampParams)

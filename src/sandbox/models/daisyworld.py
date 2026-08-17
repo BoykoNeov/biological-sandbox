@@ -559,4 +559,4 @@ class Daisyworld:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = Daisyworld()
-register("daisyworld", MODEL)
+register("daisyworld", MODEL, DaisyworldParams)

@@ -165,4 +165,4 @@ class Isomerization:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = Isomerization()
-register("isomerization", MODEL)
+register("isomerization", MODEL, IsomerizationParams)

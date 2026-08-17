@@ -345,4 +345,4 @@ class GLVStochastic:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = GLVStochastic()
-register("glv_stochastic", MODEL)
+register("glv_stochastic", MODEL, GLVStochasticParams)

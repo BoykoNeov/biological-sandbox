@@ -339,4 +339,4 @@ class HHStochastic:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = HHStochastic()
-register("hh_stochastic", MODEL)
+register("hh_stochastic", MODEL, HHStochasticParams)

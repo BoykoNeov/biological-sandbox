@@ -231,4 +231,4 @@ class Repressilator:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = Repressilator()
-register("repressilator", MODEL)
+register("repressilator", MODEL, RepressilatorParams)

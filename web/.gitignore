@@ -1,0 +1,7 @@
+# Staged by web/serve.py, not checked in.
+#
+# vendor/ is ~15 MB of Pyodide runtime; dist/ is a wheel that is rebuilt on every
+# serve precisely so that a stale one cannot survive in a working tree.
+vendor/
+dist/
+expected.json

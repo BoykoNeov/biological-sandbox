@@ -108,4 +108,4 @@ class WrightFisher:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = WrightFisher()
-register("wright_fisher", MODEL)
+register("wright_fisher", MODEL, WFParams)

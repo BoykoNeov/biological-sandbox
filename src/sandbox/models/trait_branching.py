@@ -551,4 +551,4 @@ class TraitBranching:
 
 #: The single shared, stateless instance used throughout the sandbox.
 MODEL = TraitBranching()
-register("trait_branching", MODEL)
+register("trait_branching", MODEL, TraitBranchingParams)

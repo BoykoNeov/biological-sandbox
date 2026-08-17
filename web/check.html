@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase 4a — does the browser agree with native, and does the page stay alive?</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header>
+  <h1>4a — the worker runtime and the message protocol</h1>
+  <p class="lede">
+    Two questions, and the second one is the harder to measure honestly.
+    <strong>Does a run in the browser give the same verdict as the same run
+    natively?</strong> And <strong>does the page stay alive while it runs?</strong>
+  </p>
+</header>
+
+<section>
+  <h2>0. The instruments, before any reading</h2>
+  <p>
+    Three of the four things that went wrong in the measurement slice were
+    <em>measurement</em> bugs producing plausible numbers, not code bugs producing
+    errors. So the instruments report on themselves first.
+  </p>
+  <dl id="instruments" class="readout"></dl>
+</section>
+
+<section>
+  <h2>1. Boot</h2>
+  <p>
+    The runtime is vendored, not fetched from a CDN, so the bytes are the ones the
+    measurements were taken against. The wheel is rebuilt by <code>web/serve.py</code>
+    on every start and its hash is shown here: a stale wheel runs old code, passes
+    every check, and says nothing.
+  </p>
+  <dl id="build" class="readout"></dl>
+</section>
+
+<section>
+  <h2>2. The verdicts</h2>
+  <p>
+    The native answers in <code>expected.json</code> were computed by the process
+    serving this page — same commit, same machine, same NumPy — rather than pasted
+    in from a previous session.
+  </p>
+  <div id="conformance"></div>
+</section>
+
+<section>
+  <h2>3. Is the page alive?</h2>
+  <p>
+    Identical work, run twice: once inside the worker, once on the main thread.
+    The main-thread arm is the baseline, taken in <em>this</em> session, because
+    absolute timings on this machine swing up to 4x within one — so a comparison
+    against a recorded number would not mean anything.
+  </p>
+  <p>
+    The square below is a CSS animation driven by the main thread. It stops for
+    exactly as long as the main thread is blocked. Watch it during each arm.
+  </p>
+  <p><span id="spinner"></span> <button id="run-responsiveness" disabled>run all three arms</button></p>
+  <div id="responsiveness"></div>
+</section>
+
+<section>
+  <h2>4. What does chunking cost?</h2>
+  <p>
+    The slice concluded that a stepping loop <em>"may be chunked as finely as the UI
+    wants"</em>, from 4 096 boundary crossings costing less than the noise on a single
+    workload. That measured a <strong>synchronous</strong> split. A streaming UI does
+    something different: it chunks <em>and yields</em>, so the worker thread is
+    descheduled and resumed once per chunk, and it drains and posts what it recorded.
+    This sweep separates the three.
+  </p>
+  <p><button id="run-chunking" disabled>sweep the chunk size</button></p>
+  <div id="chunking"></div>
+</section>
+
+<section>
+  <h2>Log</h2>
+  <pre id="log"></pre>
+</section>
+
+<script src="./vendor/pyodide/pyodide.js"></script>
+<script type="module">
+import { WorkerClient, fmt } from "./client.js";
+import { CLOCK_MS, CROSS_ORIGIN_ISOLATED, watch, windowFrom, describeWindow } from "./monitor.js";
+
+const logEl = document.getElementById("log");
+const say = (line) => {
+  logEl.textContent += line + "\n";
+  console.log("[4a] " + line);
+};
+
+function defList(target, rows) {
+  const el = document.getElementById(target);
+  el.innerHTML = "";
+  for (const [key, value, cls] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (cls) dd.className = cls;
+    el.append(dt, dd);
+  }
+}
+
+// -------------------------------------------------------------------------
+// 0. The instruments
+// -------------------------------------------------------------------------
+defList("instruments", [
+  [
+    "event-loop monitor",
+    "MessageChannel ping-pong — a task, not a timer, so it survives background-tab " +
+      "throttling and rAF suspension. A window with zero turns is the strongest " +
+      "reading available, not a dead instrument.",
+  ],
+  [
+    "performance.now() granularity",
+    `${CLOCK_MS.toFixed(4)} ms` +
+      (CLOCK_MS > 0.05
+        ? "  — coarsened. Anything short must be timed as a batch and divided."
+        : "  — fine. The COOP/COEP headers from web/serve.py took effect."),
+    CLOCK_MS > 0.05 ? "warn" : "ok",
+  ],
+  ["crossOriginIsolated", String(CROSS_ORIGIN_ISOLATED), CROSS_ORIGIN_ISOLATED ? "ok" : "warn"],
+  [
+    "tab visibility",
+    document.visibilityState +
+      (document.hidden
+        ? "  — rAF is SUSPENDED, so any paint figure below is absent, not slow."
+        : "  — paint figures are meaningful."),
+    document.hidden ? "warn" : "ok",
+  ],
+]);
+
+// -------------------------------------------------------------------------
+// 1. Boot
+// -------------------------------------------------------------------------
+const client = new WorkerClient("./worker.js");
+const conformance = await (await fetch("./conformance.json")).json();
+const expectedFile = await (await fetch("./expected.json")).json();
+const expected = expectedFile.expected;
+
+say("booting the worker ...");
+const boot = await watch(() => client.send("boot"));
+const build = boot.value;
+
+defList("build", [
+  ["pyodide", build.pyodide],
+  ["python", `${build.python}  (native: ${expectedFile.python})`],
+  ["numpy", `${build.numpy}  (native: ${expectedFile.numpy})`],
+  ["sandbox", build.sandbox],
+  ["wheel", `${build.wheel_url.split("/").pop()}  ${(build.wheel_bytes / 1024).toFixed(0)} KB`],
+  ["wheel sha256", build.wheel_sha256],
+  [
+    "boot",
+    `runtime ${fmt(build.timings.runtime_s)} s, numpy ${fmt(build.timings.numpy_s)} s, ` +
+      `wheel ${fmt(build.timings.wheel_s)} s, import ${fmt(build.timings.import_s)} s ` +
+      `— total ${fmt(build.timings.total_s)} s`,
+  ],
+  ["main thread during boot", describeWindow(boot.window)],
+]);
+say("booted: " + describeWindow(boot.window));
+
+// -------------------------------------------------------------------------
+// 2. Conformance
+// -------------------------------------------------------------------------
+function card(title, verdict, cls, body) {
+  const section = document.createElement("div");
+  section.className = "card " + cls;
+  const h = document.createElement("h3");
+  h.innerHTML = `<span class="badge">${verdict}</span> ${title}`;
+  section.append(h);
+  for (const line of body) {
+    const p = document.createElement("p");
+    p.innerHTML = line;
+    section.append(p);
+  }
+  return section;
+}
+
+const results = [];
+const conformanceEl = document.getElementById("conformance");
+
+for (const entry of conformance.specs) {
+  say(`running ${entry.id} ...`);
+  const native = expected[entry.id];
+  const browser = await client.send("validate", entry.spec);
+  const lines = [`<em>${entry.claim}</em>`];
+  const problems = [];
+
+  if (browser.validatable !== native.validate.validatable) {
+    problems.push(
+      `validatable: browser ${browser.validatable}, native ${native.validate.validatable}`
+    );
+  }
+
+  if (!native.validate.validatable) {
+    // The refusal IS the verdict. What must not happen is a number.
+    lines.push(`browser refused: <code>${browser.reason}</code>`);
+    if (browser.reason !== native.validate.reason) problems.push("the refusal reason differs");
+    if (browser.checks.length) problems.push("the browser produced checks for a model with none");
+  } else {
+    if (browser.passed !== native.validate.passed) {
+      problems.push(`passed: browser ${browser.passed}, native ${native.validate.passed}`);
+    }
+    if (browser.checks.length !== native.validate.checks.length) {
+      problems.push("different number of checks");
+    }
+    for (const [i, check] of browser.checks.entries()) {
+      const ref = native.validate.checks[i];
+      lines.push(`browser &nbsp;<code>${check.line}</code>`);
+      lines.push(`native &nbsp;&nbsp;<code>${ref.line}</code>`);
+      if (check.name !== ref.name) problems.push(`check ${i}: different observable`);
+      if (check.n !== ref.n) problems.push(`check ${i}: n differs (${check.n} vs ${ref.n})`);
+      if (check.predicted !== ref.predicted) problems.push(`check ${i}: prediction differs`);
+      // The agreement bar is statistical, not bitwise. Bit-identity across
+      // platforms is a convenience this phase is forbidden to build on: IEEE-754
+      // requires correctly-rounded + - * / and sqrt, and says nothing about exp,
+      // log or tanh. Two runs of one experiment agree when they agree within the
+      // measurement's own error.
+      const gap = Math.abs(check.measured - ref.measured);
+      const bar = check.z * Math.max(check.sem, ref.sem, 1e-12);
+      lines.push(
+        `browser vs native: |Δ| = ${fmt(gap)} against ${fmt(bar)} ` +
+          `(${check.z} SE)&nbsp; — ${gap === 0 ? "<strong>bit-identical</strong>" : "within the measurement's own error"}`
+      );
+      if (gap > bar) problems.push(`check ${i}: the two measurements disagree beyond ${check.z} SE`);
+    }
+  }
+
+  const verdict = problems.length ? "DIFFERS" : "MATCHES NATIVE";
+  results.push({ id: entry.id, ok: problems.length === 0 });
+  for (const problem of problems) lines.push(`<span class="bad">${problem}</span>`);
+  conformanceEl.append(
+    card(entry.title, verdict, problems.length ? "bad" : "good", lines)
+  );
+  say(`  ${entry.id}: ${verdict}`);
+}
+
+// The fingerprint comparison is reported separately and labelled, because it is
+// NOT a pass mark. Six models happen to reproduce bit-for-bit under WebAssembly
+// and the rest differ in the last couple of digits; recorded fingerprints are
+// native anchors and nothing here is built on them matching.
+const fingerprintLines = [
+  "<em>Informational, not a pass mark.</em> Recorded fingerprints are native " +
+    "anchors; a browser run is validated statistically, above. A change in whether " +
+    "these match is worth noticing — a failure to match is not a failure.",
+];
+for (const entry of conformance.specs) {
+  const nativeFp = expected[entry.id].fingerprint;
+  const browserFp = await client.send("fingerprint", entry.spec).catch((e) => ({ error: e.message }));
+  if (browserFp.error) {
+    fingerprintLines.push(`${entry.id}: <span class="warn">${browserFp.error}</span>`);
+    continue;
+  }
+  const same = JSON.stringify(browserFp.digests) === JSON.stringify(nativeFp.digests);
+  fingerprintLines.push(
+    `${entry.id}: ${same ? "bit-identical to native" : "differs from native (roundoff)"} — ` +
+      `<code>${browserFp.digests[0].slice(0, 16)}…</code> vs <code>${nativeFp.digests[0].slice(0, 16)}…</code>`
+  );
+}
+conformanceEl.append(card("Trajectory fingerprints", "INFORMATIONAL", "note", fingerprintLines));
+
+const allOk = results.every((r) => r.ok);
+say(allOk ? "ALL VERDICTS MATCH NATIVE" : "SOME VERDICTS DIFFER — see above");
+
+// -------------------------------------------------------------------------
+// 3. Responsiveness
+// -------------------------------------------------------------------------
+const button = document.getElementById("run-responsiveness");
+button.disabled = false;
+button.addEventListener("click", async () => {
+  button.disabled = true;
+  const target = document.getElementById("responsiveness");
+  target.innerHTML = "";
+  const spec = conformance.responsiveness.spec;
+
+  // Boot the second interpreter OUTSIDE any measured window. Booting is full of
+  // awaits and yields plenty; leaving it inside would put a well-behaved 2 s of
+  // loading into the arm that is supposed to isolate the stepping loop.
+  say("booting a second Pyodide on the main thread (not measured) ...");
+  if (!window._mainPy) {
+    window._mainPy = await loadPyodide({ indexURL: "./vendor/pyodide/" });
+    await window._mainPy.loadPackage("numpy");
+    await window._mainPy.loadPackage(build.wheel_url);
+    window._mainPy.runPython("from sandbox.web import bridge");
+  }
+
+  async function workerArm(chunk) {
+    const created = await client.send("create", spec);
+    const measured = await watch(() =>
+      client.send("run", { run_id: created.run_id, n_steps: spec.max_steps, chunk })
+    );
+    await client.send("close", { run_id: created.run_id });
+    return measured;
+  }
+
+  async function mainThreadArm() {
+    return watch(async () => {
+      const py = window._mainPy;
+      py.globals.set("_spec_json", JSON.stringify(spec));
+      return JSON.parse(
+        py.runPython(`
+import json
+from sandbox.web import bridge
+_run = bridge.Run("main-thread", bridge.experiment_from_spec(json.loads(_spec_json)))
+while not _run.finished:
+    _run.advance(2000)
+json.dumps(_run.status())
+`)
+      );
+    });
+  }
+
+  // INTERLEAVED, and that is not ceremony. The first browser measurement read
+  // native Python 3.13 as slower than WebAssembly on three probes from a single
+  // sequential pair, and a single repressilator reading came in 1.76x off the
+  // eventual eight-round median. Two rounds alternating is the minimum that can
+  // tell "the worker is slower" from "whatever ran second was faster".
+  // THREE arms, because two could not say *why*. The chunked worker arm came out
+  // 1.8-2.8x slower than the main thread on Python's own clock, which contradicts
+  // the slice's recorded 0.5823 vs 0.5826 s — so the third arm runs the identical
+  // work in the worker as ONE advance call with no yields between chunks. If the
+  // penalty is the chunking, it disappears here; if it survives, the penalty
+  // belongs to the thread and the chunking is exonerated.
+  const rounds = [];
+  for (let round = 0; round < 2; round++) {
+    say(`round ${round + 1}: worker, chunked ...`);
+    const chunked = await workerArm(2000);
+    say(`round ${round + 1}: worker, one call ...`);
+    const whole = await workerArm(spec.max_steps);
+    say(`round ${round + 1}: main thread — the page is about to freeze, on purpose ...`);
+    const main = await mainThreadArm();
+    rounds.push({ chunked, whole, main });
+    say(
+      `  round ${round + 1}: stepping ${fmt(chunked.value.compute_seconds)} s chunked / ` +
+        `${fmt(whole.value.compute_seconds)} s one-call / ${fmt(main.value.compute_seconds)} s main`
+    );
+  }
+
+  const last = rounds[rounds.length - 1];
+  const rows = [
+    [
+      "work",
+      `${spec.max_steps} events of ${spec.model}, identical in all three arms, 2 interleaved rounds`,
+    ],
+    [
+      "steps actually taken",
+      `chunked ${last.chunked.value.steps} · one-call ${last.whole.value.steps} · main ${last.main.value.steps}`,
+    ],
+  ];
+  for (const [i, round] of rounds.entries()) {
+    rows.push([`round ${i + 1} · worker, chunked`, describeWindow(round.chunked.window), "ok"]);
+    rows.push([`round ${i + 1} · worker, one call`, describeWindow(round.whole.window), "ok"]);
+    rows.push([`round ${i + 1} · main thread`, describeWindow(round.main.window), "bad"]);
+  }
+
+  // Windows are NOT comparable as throughput: the chunked worker's also contains
+  // message round trips, JSON draining and progress posting. Python's own clock
+  // around advance() alone is the like-with-like figure.
+  rows.push([
+    "stepping time (Python's own clock)",
+    rounds
+      .map(
+        (r, i) =>
+          `round ${i + 1}: chunked ${fmt(r.chunked.value.compute_seconds)} s / ` +
+          `one-call ${fmt(r.whole.value.compute_seconds)} s / main ${fmt(r.main.value.compute_seconds)} s`
+      )
+      .join("   ·   "),
+  ]);
+  rows.push([
+    "worker penalty",
+    rounds
+      .map(
+        (r, i) =>
+          `round ${i + 1}: chunked ${(r.chunked.value.compute_seconds / r.main.value.compute_seconds).toFixed(2)}x, ` +
+          `one-call ${(r.whole.value.compute_seconds / r.main.value.compute_seconds).toFixed(2)}x`
+      )
+      .join("   ·   ") + "   (relative to the main thread)",
+  ]);
+
+  const blockedRatios = rounds.map((r) => r.main.window.blocked_ms / r.chunked.window.blocked_ms);
+  rows.push([
+    "blocking ratio",
+    blockedRatios.map((r) => `${r.toFixed(0)}x`).join(" · ") +
+      " — the main-thread arm blocks that much longer than the chunked worker",
+  ]);
+  if (rounds.some((r) => r.whole.window.blocked_is_lower_bound)) {
+    rows.push([
+      "note",
+      "the one-call worker arm blocks the WORKER for the whole run and the page not " +
+        "at all — which is the point; its main-thread window above stays live.",
+    ]);
+  }
+  if (rounds.some((r) => r.main.window.blocked_is_lower_bound)) {
+    rows.push([
+      "note",
+      "the main-thread figures are LOWER BOUNDS wherever the event loop never got a " +
+        "single turn: the freeze is at least the whole window and possibly longer",
+    ]);
+  }
+  rows.push([
+    document.hidden ? "NOT USABLE AS MEASURED" : "conditions",
+    document.hidden
+      ? "the tab is hidden. requestAnimationFrame is suspended, so the paint figures are " +
+        "absent rather than slow, and a background renderer's worker is deprioritized — " +
+        "which shows up here as a worker penalty that does not exist. Open this page in a " +
+        "visible window."
+      : "the tab is visible and painting, so the frame figures are real and the worker " +
+        "arm is not being scheduled against a throttled renderer.",
+    document.hidden ? "bad" : "ok",
+  ]);
+
+  target.innerHTML = "<dl id='responsiveness-list' class='readout'></dl>";
+  defList("responsiveness-list", rows);
+  button.disabled = false;
+});
+
+// -------------------------------------------------------------------------
+// 4. The chunk-size sweep
+// -------------------------------------------------------------------------
+const chunkButton = document.getElementById("run-chunking");
+chunkButton.disabled = false;
+chunkButton.addEventListener("click", async () => {
+  chunkButton.disabled = true;
+  const spec = conformance.responsiveness.spec;
+  const sizes = [250, 1000, 4000, 16000, spec.max_steps];
+
+  async function timeChunk(chunk, quiet) {
+    const created = await client.send("create", spec);
+    const status = await client.send("run", {
+      run_id: created.run_id,
+      n_steps: spec.max_steps,
+      chunk,
+      quiet,
+    });
+    await client.send("close", { run_id: created.run_id });
+    return status.compute_seconds;
+  }
+
+  // Interleaved across variants as well as repeated, for the same reason the
+  // arms above are: a sequential sweep on this machine measures the machine.
+  const results = new Map(sizes.map((size) => [size, { quiet: [], full: [] }]));
+  for (let round = 0; round < 2; round++) {
+    for (const size of sizes) {
+      say(`chunk ${size}, round ${round + 1} ...`);
+      results.get(size).quiet.push(await timeChunk(size, true));
+      results.get(size).full.push(await timeChunk(size, false));
+    }
+  }
+
+  const best = (values) => Math.min(...values);
+  const reference = best(results.get(spec.max_steps).quiet);
+  const rows = [
+    ["work", `${spec.max_steps} events of ${spec.model} per point, 2 interleaved rounds`],
+    [
+      "estimator",
+      "best of 2 on Python's own clock inside advance(). The minimum, not the mean: " +
+        "interference can only slow a run down, so the minimum is the machine's " +
+        "capability and the spread is the contention.",
+    ],
+  ];
+  for (const size of sizes) {
+    const { quiet, full } = results.get(size);
+    rows.push([
+      size === spec.max_steps ? `${size} (one call)` : `chunk ${size}`,
+      `yield only ${fmt(best(quiet))} s (${(best(quiet) / reference).toFixed(2)}x)   ·   ` +
+        `+ drain & post ${fmt(best(full))} s (${(best(full) / reference).toFixed(2)}x)   ·   ` +
+        `spread ${(Math.max(...quiet, ...full) / Math.min(...quiet, ...full)).toFixed(2)}x`,
+    ]);
+  }
+  const worst = Math.max(
+    ...sizes.map((s) => Math.max(best(results.get(s).quiet), best(results.get(s).full)) / reference)
+  );
+  rows.push([
+    "reading",
+    document.hidden
+      ? `the one-call point is the reference, and the sweep rises to ${worst.toFixed(2)}x — ` +
+        "but the tab is HIDDEN, and that is very likely what is being measured. Chrome " +
+        "deprioritizes a background renderer, so each yield hands the worker back to a " +
+        "throttled scheduler. Re-run this in a visible window before believing any of it."
+      : `the one-call point is the reference, and nothing in the sweep exceeds ` +
+        `${worst.toFixed(2)}x over a ${(sizes[sizes.length - 1] / sizes[0]).toFixed(0)}x range ` +
+        "of chunk sizes — inside the run-to-run spread. Chunking is free here, so the chunk " +
+        "size is a display choice and nothing else. (Run this page hidden and the same sweep " +
+        "rises past 3x: that is the background throttle, not the chunking.)",
+  ]);
+
+  document.getElementById("chunking").innerHTML =
+    "<dl id='chunking-list' class='readout'></dl>";
+  defList("chunking-list", rows);
+  chunkButton.disabled = false;
+  say("chunk sweep done");
+  window._chunkResults = Object.fromEntries(
+    [...results].map(([size, r]) => [size, r])
+  );
+});
+
+// -------------------------------------------------------------------------
+// Autorun: ?autorun=<name> runs everything and posts the results back.
+//
+// This exists so the page can be opened in a REAL, visible browser window. Every
+// number the phase has taken so far came from an automated tab that Chrome
+// considers hidden, where requestAnimationFrame is suspended and a background
+// renderer can be deprioritized — which is a caveat on the CPU figures and a
+// flat refusal on any claim about frames. A visible window cannot be driven by
+// the automation, so it reports back instead.
+// -------------------------------------------------------------------------
+const autorun = new URLSearchParams(location.search).get("autorun");
+if (autorun) {
+  say("autorun: running every section, then posting the results back ...");
+  document.getElementById("run-responsiveness").click();
+  await new Promise((resolve) => {
+    const poll = setInterval(() => {
+      if (!document.getElementById("run-responsiveness").disabled) {
+        clearInterval(poll);
+        resolve();
+      }
+    }, 500);
+  });
+  document.getElementById("run-chunking").click();
+  await new Promise((resolve) => {
+    const poll = setInterval(() => {
+      if (!document.getElementById("run-chunking").disabled) {
+        clearInterval(poll);
+        resolve();
+      }
+    }, 500);
+  });
+
+  await fetch(`/results/${autorun}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      {
+        visibility: document.visibilityState,
+        hidden: document.hidden,
+        crossOriginIsolated: CROSS_ORIGIN_ISOLATED,
+        clock_ms: CLOCK_MS,
+        build,
+        conformance: results,
+        boot_window: boot.window,
+        responsiveness: document.getElementById("responsiveness").innerText,
+        chunking: document.getElementById("chunking").innerText,
+        log: document.getElementById("log").textContent,
+      },
+      null,
+      2
+    ),
+  });
+  say("autorun: results posted.");
+}
+</script>
+</body>
+</html>

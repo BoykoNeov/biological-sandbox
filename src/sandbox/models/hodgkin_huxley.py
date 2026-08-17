@@ -309,4 +309,4 @@ class HodgkinHuxley:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = HodgkinHuxley()
-register("hodgkin_huxley", MODEL)
+register("hodgkin_huxley", MODEL, HHParams)

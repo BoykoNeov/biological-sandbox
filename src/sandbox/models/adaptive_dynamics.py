@@ -461,4 +461,4 @@ class AdaptiveDynamics:
 
 #: The single shared, stateless instance used throughout the sandbox.
 MODEL = AdaptiveDynamics()
-register("adaptive_dynamics", MODEL)
+register("adaptive_dynamics", MODEL, AdaptiveDynamicsParams)

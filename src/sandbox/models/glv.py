@@ -368,4 +368,4 @@ class GLV:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = GLV()
-register("glv", MODEL)
+register("glv", MODEL, GLVParams)

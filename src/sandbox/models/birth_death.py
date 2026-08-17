@@ -147,4 +147,4 @@ class BirthDeath:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = BirthDeath()
-register("birth_death", MODEL)
+register("birth_death", MODEL, BirthDeathParams)

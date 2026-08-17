@@ -1,0 +1,193 @@
+/* One stylesheet for the whole front-end. No framework, no build step — the
+   plan puts both out of scope, and a page that serves as a static file is a page
+   that can be opened from a directory five years from now. */
+
+:root {
+  --bg: #fbfbfd;
+  --panel: #ffffff;
+  --ink: #16181d;
+  --muted: #5b616e;
+  --line: #dfe2ea;
+  --accent: #3f5bd9;
+  --good: #1c7a4a;
+  --good-bg: #e8f6ee;
+  --bad: #b0202f;
+  --bad-bg: #fdecee;
+  --warn: #8a5a00;
+  --warn-bg: #fdf3e0;
+  --note-bg: #f1f3f9;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161b;
+    --panel: #1b1e25;
+    --ink: #e8eaf0;
+    --muted: #99a0b0;
+    --line: #2c313c;
+    --accent: #8ea3ff;
+    --good: #6bd39b;
+    --good-bg: #14301f;
+    --bad: #ff8b96;
+    --bad-bg: #38181c;
+    --warn: #ffc76b;
+    --warn-bg: #372a10;
+    --note-bg: #21252f;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14161b;
+  --panel: #1b1e25;
+  --ink: #e8eaf0;
+  --muted: #99a0b0;
+  --line: #2c313c;
+  --accent: #8ea3ff;
+  --good: #6bd39b;
+  --good-bg: #14301f;
+  --bad: #ff8b96;
+  --bad-bg: #38181c;
+  --warn: #ffc76b;
+  --warn-bg: #372a10;
+  --note-bg: #21252f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 2rem 1.5rem 5rem;
+  max-width: 62rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 .5rem; }
+h2 { font-size: 1.1rem; margin: 2.5rem 0 .75rem; padding-bottom: .35rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: .95rem; margin: 0 0 .5rem; }
+p { margin: .6rem 0; }
+code { font-family: var(--mono); font-size: .88em; }
+a { color: var(--accent); }
+
+.lede { color: var(--muted); max-width: 46rem; }
+.muted { color: var(--muted); }
+
+dl.readout {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: .3rem 1.2rem;
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+dl.readout dt { color: var(--muted); font-size: .85rem; }
+dl.readout dd { margin: 0; font-family: var(--mono); font-size: .85rem; overflow-wrap: anywhere; }
+dl.readout dd.ok { color: var(--good); }
+dl.readout dd.bad { color: var(--bad); }
+dl.readout dd.warn { color: var(--warn); }
+
+.card {
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 8px;
+}
+.card p { font-size: .88rem; margin: .35rem 0; }
+.card.good { border-left-color: var(--good); }
+.card.bad { border-left-color: var(--bad); }
+.card.note { border-left-color: var(--muted); }
+
+.badge {
+  display: inline-block;
+  padding: .1rem .5rem;
+  margin-right: .4rem;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  background: var(--note-bg);
+  color: var(--muted);
+}
+.card.good .badge { background: var(--good-bg); color: var(--good); }
+.card.bad .badge { background: var(--bad-bg); color: var(--bad); }
+
+.bad { color: var(--bad); font-weight: 600; }
+.warn { color: var(--warn); }
+
+button {
+  font: inherit;
+  font-size: .9rem;
+  padding: .4rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+
+select, input[type="number"] {
+  font: inherit;
+  font-size: .85rem;
+  padding: .25rem .4rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: .8rem;
+  line-height: 1.5;
+  padding: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  max-height: 24rem;
+}
+
+canvas { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+canvas.pixels { image-rendering: pixelated; }
+
+/* The spinner is a main-thread CSS animation: it stops for exactly as long as
+   the main thread is blocked, which makes the measurement visible rather than
+   only reported. */
+#spinner {
+  display: inline-block;
+  width: 26px; height: 26px;
+  vertical-align: middle;
+  margin-right: .6rem;
+  background: var(--accent);
+  border-radius: 4px;
+  animation: spin 1.1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1.25rem;
+  align-items: end;
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; color: var(--muted); }
+
+.legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; font-size: .8rem; margin: .5rem 0; }
+.legend span { display: inline-flex; align-items: center; gap: .35rem; font-family: var(--mono); }
+.swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+
+.scalebar { height: 10px; border-radius: 3px; border: 1px solid var(--line); }

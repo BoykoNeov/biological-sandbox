@@ -274,4 +274,4 @@ class LotkaVolterra:
 
 # The single shared, stateless instance used throughout the sandbox.
 MODEL = LotkaVolterra()
-register("lotka_volterra", MODEL)
+register("lotka_volterra", MODEL, LVParams)

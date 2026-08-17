@@ -1,0 +1,56 @@
+{
+  "note": "The specs the browser and native are compared on. web/serve.py computes the native answer for each of these at start-up and writes web/expected.json; web/check.html runs the same specs in the worker and compares. Keeping them in a data file rather than in either program is what makes the two sides provably the same question.",
+  "specs": [
+    {
+      "id": "wright_fisher",
+      "title": "Wright-Fisher — neutral fixation probability",
+      "claim": "P(A fixes) = p0 exactly, because the frequency is a bounded martingale. This is the one carrying a real PASS: a predicted number, a measured mean, and a tolerance of z standard errors.",
+      "spec": {
+        "model": "wright_fisher",
+        "params": { "N": 200, "p0": 0.3 },
+        "replicates": 400,
+        "seed": 20260817,
+        "max_steps": 20000,
+        "record_every": 1
+      }
+    },
+    {
+      "id": "repressilator",
+      "title": "Repressilator — the refusal",
+      "claim": "No analytic_predictions: the deterministic limit is a limit cycle, so there is no scalar for an ensemble mean to match. Native validate() raises; the browser must refuse for the same reason. A pass mark quoting a tolerance would be meaningless here, and matching the refusal is the whole verdict.",
+      "spec": {
+        "model": "repressilator",
+        "params": {
+          "alpha": 216.0,
+          "alpha0": 0.216,
+          "n_hill": 2.0,
+          "beta": 1.0,
+          "Omega": 50.0,
+          "t_max": 4.0
+        },
+        "replicates": 3,
+        "seed": 20260817,
+        "max_steps": 30000,
+        "record_every": 10
+      }
+    }
+  ],
+  "responsiveness": {
+    "note": "Identical work on the main thread and in the worker, measured with the MessageChannel instrument. The main-thread arm is the same-session baseline the plan requires; re-running the old slice across sessions would compare timings on a machine that swings 4x inside one session.",
+    "spec": {
+      "model": "repressilator",
+      "params": {
+        "alpha": 216.0,
+        "alpha0": 0.216,
+        "n_hill": 2.0,
+        "beta": 1.0,
+        "Omega": 100.0,
+        "t_max": 1000.0
+      },
+      "replicates": 1,
+      "seed": 4,
+      "max_steps": 60000,
+      "record_every": 50
+    }
+  }
+}
