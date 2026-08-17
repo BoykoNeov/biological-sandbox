@@ -21,6 +21,7 @@ from sandbox.models import (
     isomerization,  # noqa: F401  (import triggers registration)
     lotka_volterra,  # noqa: F401  (import triggers registration)
     repressilator,  # noqa: F401  (import triggers registration)
+    schnakenberg,  # noqa: F401  (import triggers registration)
     trait_branching,  # noqa: F401  (import triggers registration)
     wright_fisher,  # noqa: F401  (import triggers registration)
 )
@@ -59,6 +60,11 @@ from sandbox.models.repressilator import (
     Repressilator,
     RepressilatorParams,
     RepressilatorState,
+)
+from sandbox.models.schnakenberg import (
+    Schnakenberg,
+    SchnakenbergParams,
+    SchnakenbergState,
 )
 from sandbox.models.trait_branching import (
     TraitBranching,
@@ -104,6 +110,9 @@ __all__ = [
     "Repressilator",
     "RepressilatorParams",
     "RepressilatorState",
+    "Schnakenberg",
+    "SchnakenbergParams",
+    "SchnakenbergState",
     "TraitBranching",
     "TraitBranchingParams",
     "TraitBranchingState",
