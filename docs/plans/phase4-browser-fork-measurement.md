@@ -22,7 +22,12 @@ validated core is already a browser-compatible artifact; there is no second
 implementation to write and, more to the point, **no second implementation to
 keep correct**, which is the cost that would actually have mattered here.
 
-Demonstrated end to end, in Chrome, with no CDN and no source edits:
+Demonstrated end to end, in Chrome, with no CDN and no source edits. **The
+timings in this block are a single run and are illustrative only** — the
+repeated-measurement discipline lives in §2, and the same page read
+`1.64 / 0.35 / 0.4629 s` on the run before this one, a 1.5x spread on
+`validate()` from two consecutive loads. Take §2's table for speed; take this
+block for *what happened*:
 
 ```
 pyodide runtime booted in 2.00 s
@@ -40,7 +45,8 @@ repressilator trajectory fingerprint: d429cbea1e694177
 
 The ValidationSuite — the thing this project defines "done" by — runs in a
 browser tab, and the SSA trajectory it runs alongside is **bit-identical to the
-native x86 one**. That was not the expected result; see §3.
+native x86 one**. That was not the expected result; see §3. (The `PASS` line and
+the fingerprint *are* reproducible run to run; only the seconds move.)
 
 **A dead end worth recording so it is not rediscovered:** `micropip` is *not*
 shipped in the `pyodide` npm distribution, and `loadPackage("micropip")` returns

@@ -31,7 +31,8 @@ honest treatment of the speculative arc.
 ## Status
 
 **Phases 0-3 are complete.** The validated core is **14 registered models** plus
-`core/random_matrix.py`, and the suite is **718 tests, all passing**:
+`core/random_matrix.py`, and the suite is **720 tests, all passing**
+(`373.81 s` at `-n 6`, re-run 2026-08-17):
 
 | phase | what landed |
 |---|---|

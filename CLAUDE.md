@@ -67,9 +67,20 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 **Phases 0-3 are all complete.** The validated core is 14 models plus
 `core/random_matrix.py`; the `models/ecosystem/` quarantine is still **empty**,
-and that remains the correct outcome. Suite **718 passed** (see the Phase 3
-close-out below for why the wall-clock number needs a same-session baseline *and*
-the xdist worker assignment before it means anything).
+and that remains the correct outcome. Suite **720 passed in 373.81 s** at `-n 6`,
+re-run 2026-08-17 (the Phase-3 close-out's `718` predates `fadfbe8`, which added
+two; see that close-out below for why the wall-clock number needs a same-session
+baseline *and* the xdist worker assignment before it means anything).
+
+**Two things that re-run caught, both about a green run that is not what it looks
+like.** The environment had drifted: `matplotlib` was gone, so `uv run pytest`
+reported `710 passed, 1 skipped` — an entire absent test module showing up as
+**one quiet line**, ten tests missing with nothing failing. Use
+`uv sync --extra viz`, and read the skip count, not just the failures. And the
+timing decomposes the way the close-out predicts rather than the way it looks:
+`390.09 s` for the 710-test run against `373.81 s` for the 720-test one, i.e.
+*more* tests in *less* time, so the gap to the recorded `225.80-303.91 s` is
+machine drift and **no regression is visible**.
 
 Phase 0 (Wright-Fisher) complete and validated. **Phase 1 complete**: RK4
 integrator + `DeterministicLimitModel` protocol, Gillespie SSA engine,
