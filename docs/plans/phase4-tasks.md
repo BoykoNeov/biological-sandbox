@@ -349,6 +349,27 @@ two repressilator tests, which this phase does not touch, grew by **+62.15 s**,
 the difference is drift in the critical path, **no cost from the new tests is
 visible**, and the 56 bridge tests cost 9-12 s standalone anyway.
 
+**And the worker tags say why, definitively.** A third run with `-v` (the first
+attempt passed `-q -v` together, and `-q` wins — the tags were simply absent):
+
+```
+[gw4] [ 82%] PASSED test_repressilator.py::test_fixed_omega_propensities_fail_the_convergence_check
+[gw4] [ 99%] PASSED test_repressilator.py::test_squared_omega_propensities_fail_the_convergence_check
+[gw4] [ 99%] PASSED test_repressilator.py::test_repressilator_discrepancy_scales_as_omega_minus_half
+776 passed in 334.00 s
+```
+
+**All three long repressilator tests land on `gw4`, back to back** — roughly
+`34.9 + 125.4 + 152.7 = 313 s` of a `334 s` total. One worker is **94% of the
+wall clock**, and the other five finish and idle. So the suite's total is not a
+measure of the suite: it is a measure of `gw4`, and adding tests cannot move it
+unless they land there. That is the mechanism behind the decomposition above,
+*observed* rather than inferred — and it is why the `+60.11 s` and the
+`+62.15 s` are the same number wearing two hats.
+
+(The identical command read `346.23 s` and `334.00 s` on two runs, a 3.5% swing,
+which is this machine on a good day.)
+
 **Conditions, because they are unusually bad and it would be dishonest to omit
 them.** The machine was at **100% CPU across 16 cores** during both runs, with
 **30 Python processes belonging to unrelated projects** on it (a space-station

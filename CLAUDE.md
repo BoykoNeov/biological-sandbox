@@ -174,7 +174,13 @@ the same failure as overclaiming it.
 the cleanest this project has managed: the total grew by `+60.11 s`, and the two
 repressilator tests — untouched by Phase 4 — grew by `+62.15 s`, **more than the
 entire gap**, while everything else fell slightly (`70.14 → 68.10 s`). No cost
-from the 56 new tests is visible. **Both runs were taken with the machine at
+from the 56 new tests is visible. **The worker tags say why, and this time it was
+observed rather than inferred**: all three long repressilator tests land on
+**`gw4`, back to back** — about `313 s` of a `334 s` total, so one worker is
+**94% of the wall clock** and the other five finish and idle. The suite total is
+not a measure of the suite; it is a measure of `gw4`, and adding tests cannot
+move it unless they land there. (Watch the flags: `-q -v` silently drops the
+tags, because `-q` wins.) **Both runs were taken with the machine at
 100% CPU and 30 Python processes from unrelated projects on it**, so the
 absolutes compare to nothing recorded earlier; what survives is the
 decomposition, because both arms were contended together.
