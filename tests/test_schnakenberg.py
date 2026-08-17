@@ -20,7 +20,9 @@ import pytest
 
 import sandbox.models  # noqa: F401  (registers models)
 from sandbox.core.protocol import Experiment, FieldModel, TerminableModel, ValidatableModel
+from sandbox.core.recorder import run_replicate
 from sandbox.core.registry import get_model, register
+from sandbox.core.rng import spawn_rngs
 from sandbox.core.selection import selection_report
 from sandbox.core.sweep import run_experiment
 from sandbox.core.validation import validate
@@ -579,15 +581,73 @@ def seeded_experiment(mode_j: int, **overrides) -> tuple[Experiment, Schnakenber
     )
 
 
-def relative_floor(params: SchnakenbergParams, mode_j: int, relative: float = 1e-6) -> float:
-    """A numerical floor proportional to the rate being predicted.
+def measure_seeded_rate(mode_j: int, eps: float) -> tuple[float, float]:
+    """One deterministic run's measured exponent, and the amplitude it ended at."""
+    experiment, params = seeded_experiment(mode_j, eps=eps)
+    (rng,) = spawn_rngs(experiment.seed, 1)
+    traj = run_replicate(
+        MODEL,
+        params,
+        rng,
+        max_steps=experiment.max_steps,
+        record_every=experiment.record_every,
+    )
+    return float(traj.final["growth_rate"]), abs(float(traj.final["a_q"]))
 
-    A deterministic model's statistical SE is zero, so ``validate()`` needs a floor —
-    and an *absolute* one cannot serve rates spanning 0.012 to 0.234. The claim is a
-    relative precision, so the floor is too. At ``1e-6`` it still rejects the
-    continuum formula at every probe, by 8x at the closest one.
+
+def richardson_bound(mode_j: int, eps: float = 1.0e-5) -> float:
+    """``(4/3) |m(eps) - m(eps/2)|`` — the nonlinear residual, **derived** not typed.
+
+    Gray-Scott's instrument: Richardson in the **amplitude**, the same one that has
+    served the HH transient, the Gray-Scott linearization, the gLV relaxation and the
+    LV period. The ``4/3`` is the factor for a *second-order* error, and that order is
+    measured rather than assumed — the residual falls a hundredfold for a tenfold drop
+    in ``eps`` (`2.07e-06 → 2.07e-08`), so the nonlinear correction to a ``u^2 v``
+    reaction's projection is quadratic in the seeded amplitude.
     """
-    return relative * abs(dispersion(params, mode_j)[0])
+    return (4.0 / 3.0) * abs(
+        measure_seeded_rate(mode_j, eps)[0] - measure_seeded_rate(mode_j, eps / 2)[0]
+    )
+
+
+def double_precision_bound(mode_j: int, eps: float = 1.0e-5) -> float:
+    """The floor below which a log-ratio exponent cannot be measured at all.
+
+    The exponent is ``log(a(T)/a(0))/T``, so an absolute perturbation ``delta`` in the
+    measured amplitude moves it by ``delta / (a(T) T)``. The projection carries
+    rounding of order ``eps_mach`` times the field's own scale, which is ``u* ~ 1``.
+    So the floor is ``eps_mach * u* / (|a(T)| * T)`` — and it **explodes for a decaying
+    mode**, whose amplitude is ``eps`` times ``exp(-|lambda| T)``.
+
+    This is not decoration. It is why :func:`test_the_derived_floor_predicts_the_true_error`
+    can only be asserted at one probe: at `mode_j = 24` the mode is amplified 20x, this
+    floor is `3e-14` against a nonlinear residual of `1.6e-09`, and Richardson predicts
+    the truth to a ratio of **1.00**. At `mode_j = 40` the mode decays by `8.7e-05`,
+    this floor is `6.8e-09` against a true error of `6.3e-09` — the residual *is* the
+    floor, there is no nonlinear signal left to predict, and Richardson's ratio is
+    noise (measured `0.28`, `0.83`, `2.77`, `3.43` across horizons). Phase 3d met the
+    same wall from the other side: a bound that keeps shrinking while the true residual
+    sits on the floating-point floor drives the ratio to `3.2e7`.
+    """
+    _, amplitude = measure_seeded_rate(mode_j, eps)
+    params = factory({**SEEDED, "mode_j": mode_j, "eps": eps})
+    u_star, _ = homogeneous_state(params)
+    return float(np.finfo(float).eps * u_star / (amplitude * params.t_max))
+
+
+def derived_floor(mode_j: int, eps: float = 1.0e-5) -> float:
+    """The ``sem_floor`` for ``validate()``: whichever derived bound is larger.
+
+    A deterministic model's statistical SE is zero, so a numerical floor is needed, and
+    non-negotiable #2 says derive it. There are two error sources and neither dominates
+    everywhere — the nonlinear residual at an amplified mode, double precision at a
+    decayed one — so the floor is the larger of the two, each derived from a
+    measurement rather than written down. An earlier version typed ``1e-6 * |rate|``:
+    it sat in a wide measured gap and would have passed, but it is the hardcoded
+    epsilon this project's rule exists to prevent, and it could not notice if the
+    error's order or mechanism changed.
+    """
+    return max(richardson_bound(mode_j, eps), double_precision_bound(mode_j, eps))
 
 
 @pytest.mark.parametrize(
@@ -601,13 +661,70 @@ def test_validate_reproduces_the_seeded_growth_rate(
     A one-sided check cannot see a dispersion relation that has the right shape and
     the wrong sign, which is why both probes ship.
     """
-    experiment, params = seeded_experiment(mode_j)
-    report = validate(experiment, factory, z=4.0, sem_floor=relative_floor(params, mode_j))
+    experiment, _ = seeded_experiment(mode_j)
+    report = validate(experiment, factory, z=4.0, sem_floor=derived_floor(mode_j))
     assert report.passed, str(report)
     (check,) = report.checks
     assert check.predicted == pytest.approx(expected_rate, rel=1e-8)
     assert math.copysign(1.0, check.measured) == sign
     assert abs(check.measured / check.predicted - 1.0) < 1e-6
+
+
+def test_the_derived_floor_predicts_the_true_error() -> None:
+    """Richardson against the error it stands in for — at the one probe that can score it.
+
+    Unusually the true error is available: the stencil's eigenvalue **is** the exact
+    linear rate, so `|measured - predicted|` is the whole residual. At `mode_j = 24`,
+    amplified 20x so double precision is four orders of magnitude away, the bound
+    predicts it to a ratio of **1.00** — the sixth outing for this instrument, and the
+    first scored against a known answer rather than against a finer run.
+
+    Two-sided on purpose: a bound many times too large passes every tolerance built
+    from it while quietly making the check vacuous. Which is exactly what happens at a
+    *decaying* probe, so the same assertion is deliberately NOT made there — see
+    :func:`double_precision_bound`, and the companion test below which pins the
+    crossover instead of leaving it as prose.
+    """
+    predicted, _, _ = dispersion(factory({**SEEDED, "mode_j": 24}), 24)
+    true_error = abs(measure_seeded_rate(24, 1.0e-5)[0] - predicted)
+    bound = richardson_bound(24)
+    ratio = bound / true_error
+    # Banded at +-25%, not +-100%: the run is deterministic, the measured ratio is
+    # 0.9994, and a loose band would accept the WRONG Richardson factor. Dropping the
+    # 4/3 (i.e. assuming a first-order error) reads 0.75 and doubling it reads 1.5;
+    # both are mutation-checked to fail here, which is what makes this an assertion
+    # about the error's order rather than about its rough size.
+    assert 0.8 < ratio < 1.25, f"bound {bound:.3e} vs true error {true_error:.3e}"
+
+
+@pytest.mark.parametrize(
+    ("mode_j", "regime"), [(24, "nonlinear residual"), (40, "double precision")]
+)
+def test_which_error_source_dominates_is_the_mode_not_the_tolerance(
+    mode_j: int, regime: str
+) -> None:
+    """The crossover, asserted rather than described.
+
+    An amplified mode's residual is the nonlinear term and Richardson measures it; a
+    mode that decays by `8.7e-05` has an amplitude so small that the exponent's own
+    double-precision floor is the residual, and there is nothing left to extrapolate.
+    Both are derived, and which one is larger is a fact about the mode — which is why
+    the shipped floor takes the maximum instead of choosing once.
+    """
+    nonlinear = richardson_bound(mode_j)
+    precision = double_precision_bound(mode_j)
+    predicted, _, _ = dispersion(factory({**SEEDED, "mode_j": mode_j}), mode_j)
+    true_error = abs(measure_seeded_rate(mode_j, 1.0e-5)[0] - predicted)
+
+    if regime == "nonlinear residual":
+        assert precision < true_error / 100.0  # 3e-14 against 1.6e-09
+        assert nonlinear == pytest.approx(true_error, rel=0.5)
+    else:
+        # The floor alone accounts for the residual to better than a factor of two.
+        assert 0.5 < precision / true_error < 2.0
+        assert precision > nonlinear / 4.0
+
+    assert derived_floor(mode_j) == max(nonlinear, precision)
 
 
 @pytest.mark.parametrize("mode_j", [19, 40])
@@ -623,7 +740,7 @@ def test_a_continuum_prediction_fails_the_seeded_rate_check(mode_j: int) -> None
         Experiment(**{**experiment.to_dict(), "model": broken}),
         factory,
         z=4.0,
-        sem_floor=relative_floor(params, mode_j),
+        sem_floor=derived_floor(mode_j),
     )
     assert not report.passed, str(report)
     (check,) = report.checks
