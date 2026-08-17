@@ -204,18 +204,27 @@ The deepest obstacle across the whole ambitious arc is **multi-scale coupling**:
 
 ## 8. Immediate next action
 
-**Phases 0-3 are complete**, so the original text here — "implement Phase 0" — has
+**Phases 0-4 are complete**, so the original text here — "implement Phase 0" — has
 been stale since the first phase closed. It is kept below for the record.
 
-**The next action is Phase 4: the browser front-end** (`docs/plans/phase4-plan.md`).
+**Phase 4, the browser front-end, is built** (`docs/plans/phase4-{plan,tasks}.md`).
 That closes the §4 fork, which this document told the reader to *"decide early"*
 and which went undecided through four phases. It was settled by measurement rather
 than argument, and **§4's stated cost for the browser branch does not survive
-it** — see the deviation note in §4 above and the two measurement documents:
+it** — see the deviation note in §4 above and the measurement documents:
 
 - `docs/plans/phase4-browser-fork-measurement.md` — the numerics in WebAssembly.
 - `docs/plans/phase4-worker-and-rendering-measurement.md` — the worker requirement
-  and the cost of drawing.
+  and the cost of drawing. **Its worker and chunking figures were taken in a
+  hidden tab and are superseded**; see the tasks document.
+- `docs/plans/phase4-tasks.md` — what was built, and every number with the
+  conditions it needs.
+
+**There is no Phase 5 in this document, and inventing one is not the next
+action.** What §6 sketched beyond here is the speculative arc, and Phase 3 took
+the three stops that still carry a checkable prediction. The
+`models/ecosystem/` quarantine is still empty, and per non-negotiable #5 that
+remains the correct outcome rather than a gap to fill.
 
 > *Original text, superseded:* Implement Phase 0: the Wright-Fisher vertical slice
 > through `protocol → model → recorder → visualizer → sweep → validation`, with the

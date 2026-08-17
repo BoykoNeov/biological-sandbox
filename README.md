@@ -40,17 +40,37 @@ honest treatment of the speculative arc.
 | 1 | RK4 + the deterministic-limit protocol, the Gillespie engine, `birth_death` and `isomerization` (exact closed forms), the log-log convergence track, and the repressilator |
 | 2 | Hodgkin-Huxley (deterministic, voltage-clamp, and channel-noise) and Gray-Scott |
 | 3 | generalized Lotka-Volterra, the May / Allesina-Tang random community matrix, stochastic gLV, Daisyworld, adaptive dynamics, and trait branching |
+| 4 | the browser front-end: a worker runtime and message protocol, two renderers, and one demo end to end |
 
 `models/ecosystem/` — the speculative quarantine — is still **empty**, and that
 is the intended outcome, not an omission: nothing so far required giving up a
 checkable prediction.
 
-The `HANDOFF.md` §4 browser-vs-local fork is the open decision. It has now been
-**measured** rather than argued: see
-[`docs/plans/phase4-browser-fork-measurement.md`](docs/plans/phase4-browser-fork-measurement.md).
-The short version — the core runs unmodified in a browser under Pyodide at about
-**2x** native, and six of the models reproduce their trajectories **bit-for-bit**
-in WebAssembly.
+The `HANDOFF.md` §4 browser-vs-local fork was the project's long-open decision.
+It was **measured** rather than argued, and then built. The core runs unmodified
+under Pyodide at about **2x** native, so there is no second implementation of the
+numerics to keep correct; the real cost was a Web Worker, without which a run
+blocks the page for its entire duration with the event loop getting *zero* turns.
+
+Run it:
+
+```bash
+uv run python web/serve.py --download     # stage Pyodide, build the wheel, serve
+# then open http://127.0.0.1:8765/
+```
+
+- `index.html` — the demo: stochastic replicates over their deterministic limit,
+  with the system size as a control, and the ValidationSuite running live.
+- `check.html` — does the browser's verdict match native, and does the page stay
+  alive while it runs.
+- `draw.html`, `coldload.html` — what drawing costs, and what the first load does.
+
+**The demo is a demonstration, not a laboratory.** The convergence sweeps, the
+test suite and every figure in the repository stay native; nothing shown in a
+browser is asserted anywhere. See
+[`docs/plans/phase4-tasks.md`](docs/plans/phase4-tasks.md) for the measurements
+— including the two that came out reproducibly *wrong* until they were re-taken
+in a browser window that was actually on screen.
 
 ## Quickstart
 

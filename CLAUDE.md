@@ -13,7 +13,15 @@ uv run pytest -q -n 0   # ...serially, when debugging (-n 6 is the default)
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
+uv run python web/serve.py --download          # the browser front-end, on :8765
 ```
+
+The front-end rebuilds the wheel on every start and the page shows its sha256:
+a stale wheel runs old code and passes every check in silence. Pyodide is
+**vendored** (`--pyodide-src <dir>` copies a local distribution, `--download`
+fetches one), never a CDN, so the bytes are the ones the measurements used and
+development works offline. `--bandwidth <Mbit>` paces the server for a cold-load
+measurement.
 
 ## The non-negotiables
 
@@ -51,8 +59,16 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 ## Layout
 
 `src/sandbox/core/` protocol + services · `models/` the models ·
-`viz/backends/` pluggable plotting · `demos/` runnable examples ·
-`tests/` wraps the ValidationSuite · `docs/plans/` per-phase dev docs.
+`viz/backends/` pluggable plotting · `web/` the browser front-end's Python side ·
+`demos/` runnable examples · `tests/` wraps the ValidationSuite ·
+`docs/plans/` per-phase dev docs · top-level `web/` the JS, HTML and the server.
+
+**`src/sandbox/web/bridge.py` is a shared service and non-negotiable #1 applies
+to it in full** — protocol surface only, never inside a concrete state, exactly
+as the Recorder does. **No numerics in JavaScript**: the JS side owns the DOM,
+the canvas and the message loop and nothing else, because a JS or shader
+reimplementation of a validated model *is* the cost this branch was chosen to
+avoid, in a language no test here can reach.
 
 ## Workflow
 
@@ -65,8 +81,109 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 ## Status
 
-**Phase 4 — the browser front-end — is planned, not built.**
-`docs/plans/phase4-plan.md`. It closes the `HANDOFF.md` §4 browser-vs-local fork,
+**Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c).** The record with
+every number is `docs/plans/phase4-tasks.md`; the plan is
+`docs/plans/phase4-plan.md`. `src/sandbox/web/{bridge,colormap}.py` plus `web/`
+(worker, client, two renderers, four pages, a staging-and-serving script) and
+`tests/test_web_bridge.py` (56 tests). Serve it with
+`uv run python web/serve.py --pyodide-src <dir>` (or `--download`); it rebuilds
+the wheel on every start and the page displays its sha256, because **a stale
+wheel runs old code and passes every check silently**.
+
+**The browser's verdict matches native**, computed same-commit and same-machine
+rather than pasted from a previous session: Wright-Fisher `[PASS] fixed_A:
+measured 0.3375 vs predicted 0.3` identically, and the repressilator **refuses**
+for the same reason native `validate()` raises. The refusal *is* the verdict
+there — its limit is a cycle, so no scalar exists for an ensemble mean to match,
+and a pass mark quoting a tolerance would be theatre. The agreement bar is
+**statistical**; that both came out bit-identical is reported as a convenience
+under a label saying so.
+
+**Two changes outside `web/` that the front-end forced, and both were overdue.**
+The registry now carries a **params type** per model: an `Experiment` names its
+model by a string so it can be serialized, yet every service still took a
+`params_factory` from its caller, so an experiment was serializable except for an
+out-of-band Python callable. And `run_replicate` became a thin wrapper over an
+incremental `ReplicateRunner`, so a front-end that must interrupt a run drives
+**one** stepping loop rather than a second implementation of subtle semantics —
+four trajectories sha256-fingerprinted across the change, bit-identical, at
+`0.2238` against `0.2228 s`.
+
+**The phase's transferable finding: a hidden tab is a different machine, not a
+noisier one.** The automated browser tab is always hidden (`document.hasFocus()`
+can be `true` while `visibilityState` is `"hidden"`), and Chrome deprioritizes a
+background renderer, handing its worker back to a throttled scheduler at every
+yield. Measured hidden, a chunk-size sweep rose to **3.59x** across a 240x range
+of chunk sizes and the worker looked **2.03-2.10x** slower than the main thread.
+Measured in a real visible window: **1.00-1.02x** and **0.89-0.99x**. The hidden
+curve was monotone in the number of yields, with small spreads, and reproduced —
+*exactly what a real per-yield cost looks like*. Three things caught it: a third
+arm running the same work as **one unchunked call** (which isolates the yield
+from the thread), a two-column decomposition separating pausing from reporting
+(they agreed, clearing the reporting), and a visible window that **posts its
+results back** to the serving process, since a visible window cannot be driven by
+the automation that would otherwise read them. Every page states its own tab
+visibility and refuses to quote frame figures when hidden.
+
+**What visible measurement then establishes** — the plan's one open item. The
+page holds **144 fps with a worst frame of 7-14 ms** while a worker streams a
+400 000-event SSA, and at Gray-Scott 256² where a single frame costs 78.6 ms of
+compute. The main-thread arm gets **zero event-loop turns and paints no frames at
+all** for ~2 s in a visible tab. The drawing path is **5.4-6.2% of a frame**, not
+the slice's 1.6-2.2%: this colormap costs ~3x more and the step here is faster.
+Recorded rather than optimized — the step is 94% and non-negotiable #4 says
+believe the profile. **The fraction is the measurement**, and the evidence is
+that it reads `6.2/5.4/6.0%` and `6.2/5.8/6.0%` across two runs whose step times
+differ by 1.6x.
+
+**The cold first load, which the plan named as the one thing that could still
+overturn the fork:** **9.01 MB over the wire** (15.78 MB raw), to a running
+interpreter in **2.53 s** local, **4.29 s** at 25 Mbit/s and **12.22 s** at
+5 Mbit/s; first simulated points about a second later in each case. The decision
+stands. **This is throughput only** — a paced local server models no latency, no
+slow start, no loss, no CDN and no mobile radio, so a real 5 Mbit/s link is worse
+than 12.2 s by an amount this does not establish.
+
+**One trap found while building the demo, and it is the phase's sharpest.**
+`discrepancy_to_limit` samples the SSA by step-hold, which is exact only while
+the recording is *denser* than the comparison grid. Coarser, and every grid point
+reads a stale value — an error that is **`Omega`-independent**, so it does not
+cancel between system sizes: it floors `D` and flattens the very scaling the
+measurement exists to show. At `Omega = 5` against a 200-point grid, `D` reads
+`8.72` with 15 578 recorded points and `8.83 / 10.28 / 13.00 / 21.15` with
+`79 / 17 / 9 / 5`. It now **refuses**, like `check_grid_is_exact`, which exists in
+the convergence module for this exact failure.
+
+**Three wrong figure-claims, all caught by looking.** A trace whose replicates ran
+out of `max_steps` at `t ≈ 8.5` while the limit was drawn to `t = 30`, so the
+right of the frame showed the limit alone and read as perfect agreement — both
+pages now size the budget from a measured event cost (~470 events per time unit
+per unit of `Omega`) **and report whether every replicate reached the horizon**.
+A two-panel split justified as *"the proteins reach ~160 and the mRNAs ~10"* when
+they reach `135.4` and `153.0` — the split is right for legibility, the stated
+reason was invented, and the panels' near-identical shape is a *result*
+(`beta = 1` equalizes the timescales). And a field benchmark whose picture is the
+seeded square patch barely moved, now captioned as a stopwatch rather than a
+demonstration. **A fourth was corrected in the opposite direction**: the demo's
+`D` caption claimed the errors overlap and runs would come out misordered, which
+the seed check had just disproved — being falsely modest about a measurement is
+the same failure as overclaiming it.
+
+**Suite: 776 passed in 346.23 s at `-n 6`**, against a same-session baseline of
+**720 passed in 286.12 s** with the bridge tests ignored. The decomposition is
+the cleanest this project has managed: the total grew by `+60.11 s`, and the two
+repressilator tests — untouched by Phase 4 — grew by `+62.15 s`, **more than the
+entire gap**, while everything else fell slightly (`70.14 → 68.10 s`). No cost
+from the 56 new tests is visible. **Both runs were taken with the machine at
+100% CPU and 30 Python processes from unrelated projects on it**, so the
+absolutes compare to nothing recorded earlier; what survives is the
+decomposition, because both arms were contended together.
+
+The remainder of this section is the two measurement slices that preceded the
+build. **Their worker and chunking numbers were all taken in a hidden tab** and
+are superseded above; the instrument lessons stand.
+
+The phase closes the `HANDOFF.md` §4 browser-vs-local fork,
 which that document told the reader to *"decide early"* and which went undecided
 through four phases; it was settled by measurement, in two slices
 (`docs/plans/phase4-{browser-fork,worker-and-rendering}-measurement.md`), and both
@@ -79,9 +196,9 @@ a design consequence.** Running an SSA on the main thread blocks the page for th
 *entire* run — 1 750 ms at 60 000 events, with the event loop getting **zero**
 turns — while the same run in a Web Worker blocks it for **10-23 ms** at identical
 Python speed (`0.5823` vs `0.5826 s`). Crossing JS→Python is free (4 096 calls cost
-less than one 115 ms workload's noise). **The whole drawing path — numpy colormap,
-wasm→JS, `putImageData` — is 1.6-2.2% of a frame at every grid size, and the
-simulation step is 98%.** matplotlib renders correctly but stays out of the default
+less than one 115 ms workload's noise). The slice put the whole drawing path at
+1.6-2.2% of a frame and the step at 98%; the shipped code measures **5.4-6.2%**
+and 94%, for the reason given above. matplotlib renders correctly but stays out of the default
 bundle: it multiplies the gzipped download **2.1x** (8.7 → 18.4 MB) to buy
 0.07-0.16 s static PNGs.
 
@@ -110,10 +227,11 @@ inside one session**, so only ratios and fractions are quoted as measurements.
 
 **Phases 0-3 are all complete.** The validated core is 14 models plus
 `core/random_matrix.py`; the `models/ecosystem/` quarantine is still **empty**,
-and that remains the correct outcome. Suite **720 passed in 373.81 s** at `-n 6`,
-re-run 2026-08-17 (the Phase-3 close-out's `718` predates `fadfbe8`, which added
-two; see that close-out below for why the wall-clock number needs a same-session
-baseline *and* the xdist worker assignment before it means anything).
+and that remains the correct outcome. The suite was **720 passed in 373.81 s** at
+`-n 6` before Phase 4 added 56 (the Phase-3 close-out's `718` predates `fadfbe8`,
+which added two; see that close-out below for why a wall-clock number needs a
+same-session baseline *and* the xdist worker assignment before it means
+anything).
 
 **Two things that re-run caught, both about a green run that is not what it looks
 like.** The environment had drifted: `matplotlib` was gone, so `uv run pytest`

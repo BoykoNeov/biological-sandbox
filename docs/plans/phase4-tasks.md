@@ -159,13 +159,21 @@ and *"the animation is smooth"* was not. It is now.
 
 ### Traces
 
-4 replicates x 400 000 repressilator events, streamed:
+The shipped configuration — 4 replicates of the repressilator at `Ω = 50` over
+`t_max = 15`, streamed, **297 378-330 051 events each and every one of them
+reaching the horizon**:
 
 | | |
 |---|---|
-| redraw, both panels from scratch | median **1.08 ms**, p95 **2.87 ms** |
-| page during the run | **144 fps**, worst frame 9 ms, event loop blocked 13 ms over 30.6 s |
-| share of a 60 fps frame | 6.4% median, 17.2% p95 |
+| redraw, both panels from scratch | median **1.37 ms**, p95 **1.70 ms** |
+| page during the run | **144 fps**, worst frame 14 ms, event loop blocked 16 ms over 48.1 s |
+| share of a 60 fps frame | 8.2% median, 10.2% p95 |
+| points held | 6 279, drawn as per-column min/max envelopes |
+
+(An earlier run of the *previous* configuration read 1.08 ms / 2.87 ms / 144 fps.
+It is not quoted as the result because that configuration is the one that ran out
+of `max_steps` at `t ≈ 8.5` — the figure fault in §6 — and a table describing the
+shipped page should come from the shipped page.)
 
 **It started at 43 ms median and a p95 of 1 030 ms**, because a redraw recomputed
 the min/max envelope over every point every time — so drawing got more expensive
@@ -184,12 +192,19 @@ steps, median per stage:
 
 | grid | dt | step | colormap | wasm→JS | canvas | drawing total | frame | on screen |
 |---|---|---|---|---|---|---|---|---|
-| 64² | 0.5 | 6.03 ms | 0.325 | 0.055 | 0.035 | **0.41 ms (6.2%)** | 6.7 ms | 144 fps, worst 7 ms |
-| 128² | 0.2 | 15.18 ms | 0.765 | 0.075 | 0.045 | **0.89 ms (5.4%)** | 16.3 ms | 144 fps, worst 7 ms |
-| 256² | 0.05 | 46.15 ms | 2.755 | 0.130 | 0.090 | **2.98 ms (6.0%)** | 49.6 ms | 144 fps, worst 7 ms |
+| 64² | 0.5 | 11.83 ms | 0.610 | 0.115 | 0.095 | **0.82 ms (6.2%)** | 13.2 ms | 142 fps |
+| 128² | 0.2 | 24.24 ms | 1.295 | 0.145 | 0.105 | **1.55 ms (5.8%)** | 26.4 ms | 144 fps |
+| 256² | 0.05 | 72.89 ms | 4.380 | 0.195 | 0.125 | **4.70 ms (6.0%)** | 78.6 ms | 144 fps |
 
-The page holds 144 fps at 256², where a single frame costs 49.6 ms of compute —
+The page holds 144 fps at 256², where a single frame costs 78.6 ms of compute —
 which is the whole point of the worker.
+
+**The fraction is the measurement, and here is the evidence for saying so.** The
+sweep was run twice on the same code, hours apart, on a machine that had moved
+under it: the step times differ by **1.5-1.6x** between the runs (`6.03 / 15.18 /
+46.15 ms` in the first, `11.83 / 24.24 / 72.89 ms` in the second) while the
+drawing fraction reads **6.2 / 5.4 / 6.0%** and **6.2 / 5.8 / 6.0%**. The
+absolute seconds are illustration; the fraction reproduces.
 
 **The fraction disagrees with the slice and the disagreement is real, not noise.**
 The slice recorded 1.6-2.2%; this reads 5.4-6.2%. Two causes, both measurable:
@@ -199,8 +214,10 @@ here is faster. **Recorded rather than optimized** — the profile says the step
 number is not; quoting the slice's 1.6-2.2% for this code would have been wrong.
 
 **A finer grid pays twice**, and simulated time per second is the figure that
-shows it: **545 / 96 / 9.3** time-units per second, a **59x** drop where the frame
-rate suggests 7x, because CFL forces `dt` from 0.5 to 0.05.
+shows it: **306 / 69.8 / 6.0** time-units per second, a **51x** drop where the
+frame rate suggests 6x, because CFL forces `dt` from 0.5 to 0.05. (The first run
+read `545 / 96 / 9.3`, a 59x drop — the absolutes moved with the machine, the
+shape did not.)
 
 ## 4. The cold first load
 
@@ -314,7 +331,34 @@ it cannot disagree with the picture it labels.
   whole Pyodide heap. A few reloads while iterating are enough to make the next
   boot look mysteriously slow, which is how it was found.
 
-## 8. What this phase does not establish
+## 8. Suite timing
+
+The rule, on its fourth repetition: a total needs a **same-session baseline**, the
+baseline needs the **worker tags**, and the tags need the **per-test durations**.
+Both runs below are one session, back to back, same command apart from the ignore.
+
+| | tests | total | repressilator pair | rest |
+|---|---|---|---|---|
+| full | 776 | **346.23 s** | 152.69 + 125.44 = **278.13 s** | 68.10 s |
+| baseline (`--ignore=tests/test_web_bridge.py`) | 720 | **286.12 s** | 119.43 + 96.55 = **215.98 s** | 70.14 s |
+
+**The decomposition is unusually clean, and it settles the question without
+needing the packing.** The total grew by **+60.11 s** for 56 added tests — and the
+two repressilator tests, which this phase does not touch, grew by **+62.15 s**,
+*more than the entire gap*. Everything else fell slightly (70.14 → 68.10 s). So
+the difference is drift in the critical path, **no cost from the new tests is
+visible**, and the 56 bridge tests cost 9-12 s standalone anyway.
+
+**Conditions, because they are unusually bad and it would be dishonest to omit
+them.** The machine was at **100% CPU across 16 cores** during both runs, with
+**30 Python processes belonging to unrelated projects** on it (a space-station
+build and a particle-accelerator one) alongside this suite's 14. The absolute
+totals are therefore not comparable to any earlier recorded figure — the Phase-3
+close-out's `225.80-303.91 s` and the `373.81 s` re-run are from different machine
+states. What survives contention is the *decomposition*, because both arms were
+contended together.
+
+## 9. What this phase does not establish
 
 - **A real network.** §4 measures throughput at a known byte rate. Latency, slow
   start, loss, CDN behaviour and mobile radios are not modelled.
