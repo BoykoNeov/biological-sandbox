@@ -183,17 +183,17 @@ harmonics have nowhere to go. The selected *mode*, by contrast, is identical at 
 45.3 and 113.3 e-folds on both grids. **How sinusoidal the pattern is and whether the
 mode has settled are different questions.**
 
-**Suite (Phase 2c): 924 passed, 12 skipped in 344.22 s at `-n 6`**, against a
-same-session baseline of **850 passed in 441.39 s** with the module ignored — i.e.
-*97 s faster with 74 more tests*, so the totals are not attributable to the test set.
-The decomposition is clean and its confound is stated: every **untouched** test ran
-10-18% slower in the baseline arm (the three repressilator tests `288.06 → 320.01 s`,
-the next five slowest `143.04 → 168.37 s`), **and that arm was contended by this
-session's own runs**, so no regression is visible and nothing stronger is claimable.
-What *is* attributable is where the cost lands: standalone the module is **39.2-41.2 s**
-at `-n 6`, most of it one 32-replicate fixture, and in the suite xdist put the expensive
-tests on `gw3` while the critical path — `gw4`, carrying 288 s of repressilator —
-received only millisecond closed-form checks.
+**Suite (Phase 2c): 928 passed, 12 skipped in 227.93 s at `-n 6`** — and the reason to
+read the decomposition rather than the number is that **three runs of essentially the
+same suite in one session read `344 / 441 / 228 s`, with the most tests in the fastest
+run.** The two long repressilator tests, untouched by 2c, run `261 / 284 / 184 s` across
+those three and track the totals almost exactly, so **the totals measure the machine**
+(the middle arm was contended by this session's own runs). No regression is visible and
+nothing stronger is claimable — a two-arm comparison would have supported the tidier and
+false story that 2c makes the suite faster. What *is* attributable: standalone the module
+is **28.0-32.6 s**, mostly a few fixtures, and xdist scattered it across `gw0/gw1/gw4`
+while the critical path drew only cheap tests — luck, not design, since adding any test
+reshuffles the packing.
 
 **A green-for-the-wrong-reason that only bites at small replicate counts**, and the
 last thing found: a quantized measurement can come out **unanimous** (6 of 6 replicates

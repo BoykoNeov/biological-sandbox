@@ -490,34 +490,30 @@ the first that differs).
 
 ## 14. Suite
 
-**924 passed, 12 skipped in 344.22 s** at `-n 6`, against a same-session baseline of
-**850 passed, 12 skipped in 441.39 s** with the module ignored. The suite is **97 s
-faster with 74 more tests in it**, so — by this project's own rule, now on its fifth
-repetition — the totals are **not attributable to the test set**.
+**Three runs of essentially the same suite in one session read `344 / 441 / 228 s`, and
+the fastest one has the most tests in it.** That is the whole result, and it is this
+project's suite-timing rule arriving for a fifth time with a 1.9x spread.
 
-The decomposition, and it is unusually clean because the discriminating quantity is
-identifiable:
+| run | module | total | the two long repressilator tests (untouched by 2c) | their worker |
+|---|---|---|---|---|
+| full | 74 tests | 924 passed, 344.22 s | 261.24 s | `gw4` |
+| baseline | ignored | 850 passed, 441.39 s | 283.81 s | `gw0` |
+| full, final | 78 tests | **928 passed, 12 skipped, 227.93 s** | 184.04 s | `gw1` |
 
-| | full (924) | baseline (850) | ratio |
-|---|---|---|---|
-| total | 344.22 s | 441.39 s | 0.78 |
-| the three repressilator tests (untouched by 2c) | 288.06 s | 320.01 s | 0.90 |
-| the next five slowest (also untouched) | 143.04 s | 168.37 s | 0.85 |
-| worker carrying the repressilator trio | `gw4` | `gw0` | — |
-
-Every *untouched* test ran 10-18% slower in the baseline arm, which is where the 97 s
-comes from. **And the baseline arm was contended by this session's own work** — two
-runs of the new module and a measurement script overlapped it — so its total is
-inflated by an amount this does not separate from drift. Recorded rather than glossed:
-the honest conclusion is that **no regression is visible and nothing stronger is
-claimable**.
+Read the third column: the two tests 2c never touched run `261 / 284 / 184 s` across the
+three, tracking the totals almost exactly. **The totals are a measure of the machine,
+not of the suite** — the baseline arm was additionally contended by this session's own
+runs, and the final arm had the machine to itself. So the honest conclusion is the
+narrow one: **no regression is visible, and nothing stronger is claimable.** A
+two-arm comparison would have supported the tidier story that 2c makes the suite
+*faster*, which is nonsense.
 
 **What is attributable is where the new module's cost lands.** Standalone it is
-**39.2-41.2 s** at `-n 6` for 75 tests, dominated by two shared selection reports (a
-32-replicate one at ~22 s and an 8-replicate one at ~8 s), which means it barely
-parallelises — one fixture is most of it. In the suite, xdist put the expensive tests on
-`gw3` while the critical path (`gw4`, carrying 288 s of repressilator) received only the
-millisecond closed-form checks. So the module cannot move the total unless a future
-collection reshuffles it onto the critical worker, which is the
-`xdist-packing-is-the-discriminating-quantity` lesson holding for a fifth phase: read
-the worker tags, and remember that adding *any* test reshuffles the packing.
+**28.0-32.6 s** at `-n 6` for 78 tests, dominated by two shared selection reports (a
+32-replicate one and an 8-replicate one) plus the four seeded-rate runs the derived floor
+needs, so it barely parallelises — a few fixtures are most of it. In the suite, xdist
+scattered it across three workers (`gw0` 52 tests, `gw1` 14, `gw4` 12) and the critical
+path — whichever worker drew the repressilator pair — got only cheap tests both times.
+That is luck rather than design: adding *any* test reshuffles the packing, which is the
+`xdist-packing-is-the-discriminating-quantity` lesson holding for a fifth phase. Read the
+worker tags before attributing a total to anything.
