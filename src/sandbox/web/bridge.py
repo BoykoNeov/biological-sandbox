@@ -432,6 +432,86 @@ def validate_spec(spec: dict[str, Any], *, z: float = 4.0) -> dict[str, Any]:
     }
 
 
+def discrepancy_to_limit(spec: dict[str, Any], *, n_grid: int = 200) -> dict[str, Any]:
+    """How far this run's replicates sit from the ODE they collapse into.
+
+    Reuses :mod:`sandbox.core.convergence`'s own ``_per_replicate_discrepancy``
+    rather than computing something similar here. The underscore is stepped over
+    deliberately: that function is the load-bearing computation of the whole
+    convergence pathway, unit-tested against hand-worked trajectories, and it
+    averages over time and species **per replicate before** the replicate mean —
+    which is the correct order and the one that avoids the phase-diffusion trap
+    the module was built around. A second implementation on this side would be a
+    lookalike that could drift, and the front-end's job is to show the project's
+    quantities, not new ones.
+
+    **What this is and is not.** It is a demonstration that the discrepancy falls
+    as ``Omega`` grows. It is *not* the validated claim: that is the log-log slope
+    of ``D(Omega)`` against ``-1/2`` with a statistical standard error, which
+    needs a sweep over many system sizes and many replicates each, is minutes of
+    CPU, and stays native. The returned dict says so in ``claim``.
+    """
+    from sandbox.core.convergence import (  # local: keeps the import graph shallow
+        _integrate_on_grid,
+        _per_replicate_discrepancy,
+    )
+
+    experiment = experiment_from_spec(spec)
+    model = get_model(experiment.model)
+    if not isinstance(model, DeterministicLimitModel):
+        return {"available": False, "reason": f"model {experiment.model!r} declares no ODE limit"}
+
+    limit_spec = dict(spec.get("limit") or {})
+    if "t_max" not in limit_spec:
+        raise ValueError("spec['limit'] must supply t_max")
+    t_max = float(limit_spec["t_max"])
+    dt = float(limit_spec.get("dt", t_max / 2000.0))
+
+    params = _params_for(experiment)
+    keys = _observable_keys(model, params)
+    grid = np.linspace(0.0, t_max, int(n_grid))
+    ode_on_grid = _integrate_on_grid(
+        model.deterministic_rhs(params),
+        np.asarray(model.initial_concentrations(params), dtype=float),
+        t_max,
+        dt,
+        grid,
+    )
+
+    run = Run("discrepancy", experiment)
+    while not run.finished:
+        run.advance(8192)
+
+    # A replicate that never reached the horizon would have its last value held
+    # across the rest of the grid, quietly turning a truncation into a
+    # discrepancy. Reported rather than silently averaged in.
+    truncated = [i for i, r in enumerate(run.runners) if r.state.t < t_max]
+    values = []
+    for runner in run.runners:
+        times, series = runner.trajectory.as_arrays()
+        values.append(_per_replicate_discrepancy(times, series, grid, ode_on_grid, keys))
+
+    mean = float(np.mean(values)) if values else math.nan
+    sem = float(np.std(values, ddof=1) / math.sqrt(len(values))) if len(values) > 1 else math.inf
+    return {
+        "available": True,
+        "model": experiment.model,
+        "D": _finite(mean),
+        "sem": _finite(sem),
+        "per_replicate": [_finite(v) for v in values],
+        "replicates": len(values),
+        "n_grid": int(n_grid),
+        "t_max": t_max,
+        "truncated": truncated,
+        "claim": (
+            "A demonstration, not the validated claim. What is validated is the "
+            "log-log slope of D(Omega) against -1/2 with a statistical standard "
+            "error; that needs a sweep over many system sizes, is minutes of CPU, "
+            "and stays native."
+        ),
+    }
+
+
 def colormap_strip(
     name: str, width: int = 256, height: int = 1
 ) -> tuple[np.ndarray, dict[str, Any]]:

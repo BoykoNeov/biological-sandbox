@@ -48,6 +48,7 @@ where they are readable; at 8 MB the copy is 24x worse on a quiet machine and
 | `limit` | spec with a `limit` block | `{available, t, series}` or `{available: false, reason}` |
 | `validate` | spec | `{validatable, passed, reason, checks: [...]}` |
 | `fingerprint` | spec | `{digests, recorded, steps}` — sha256 per replicate, **informational** |
+| `discrepancy` | spec with a `limit` block | `{D, sem, per_replicate, truncated, claim}` — mean distance from the ODE limit, **a demonstration and not the validated claim** |
 | `close` | `{run_id}` | `{closed: true, live: [...]}` |
 
 ## The spec

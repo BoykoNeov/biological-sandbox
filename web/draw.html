@@ -155,16 +155,21 @@ const TRACE_SPEC = {
     alpha0: 0.216,
     n_hill: 2.0,
     beta: 1.0,
-    Omega: 100.0,
-    t_max: 30.0,
+    Omega: 50.0,
+    t_max: 15.0,
   },
   replicates: 4,
   seed: 11,
-  // ~400 000 events is a full trace; record_every keeps each series a few
-  // thousand points, which is a DISPLAY choice and cannot change the run.
-  max_steps: 400000,
+  // max_steps must be big enough to REACH t_max, with margin. This model costs
+  // about 470 events per time unit per unit of Omega (measured: 56 184 events
+  // for t = 12 at Omega = 10, and 226 000 at Omega = 40 -- linear in Omega). The
+  // first version of this page asked for 400 000 events at Omega = 100 over
+  // t_max = 30, which needs ~1.4 million: the replicates stopped at t ~ 8.5
+  // while the limit was drawn all the way to 30, and the picture read as
+  // "they converge and then track it perfectly".
+  max_steps: 500000,
   record_every: 200,
-  limit: { t_max: 30.0, dt: 0.005 },
+  limit: { t_max: 15.0, dt: 0.005 },
 };
 
 // Two panels over one run. Both start at colour slot 0, so gene i's mRNA and
@@ -251,8 +256,20 @@ async function runTraces() {
     compute_seconds: final.compute_seconds,
     steps: final.steps,
   };
+  // Did the replicates actually reach the horizon the limit is drawn across? A
+  // run that stops early leaves the limit alone on the right-hand side of the
+  // frame, which looks like agreement and is absence.
+  const reached = final.terminal.every(Boolean);
   defList("trace-report", [
     ["run", `${final.steps.join(" / ")} events across ${final.steps.length} replicates`],
+    [
+      "reached the horizon",
+      reached
+        ? `yes — every replicate ran to t = ${TRACE_SPEC.params.t_max}`
+        : `NO — ran out of max_steps at t = ${final.t.map((v) => (v ?? 0).toFixed(2)).join(" / ")}. ` +
+          `The limit is drawn to ${TRACE_SPEC.params.t_max}, so the right of the frame shows the limit alone.`,
+      reached ? "ok" : "bad",
+    ],
     ["stepping", `${fmt(final.compute_seconds)} s inside advance()`],
     ["points held", `${points} recorded points, drawn as per-column min/max envelopes`],
     ["redraws", `${frames} (one per progress message)`],

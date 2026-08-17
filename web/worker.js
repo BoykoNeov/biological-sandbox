@@ -147,6 +147,9 @@ def web_validate(spec_json):
 def web_fingerprint(spec_json):
     return _dumps(bridge.fingerprint_spec(json.loads(spec_json)))
 
+def web_discrepancy(spec_json):
+    return _dumps(bridge.discrepancy_to_limit(json.loads(spec_json)))
+
 def web_field(run_id, field, cmap, vmin, vmax, replicate):
     run = bridge.SESSION.get(run_id)
     rgba, meta = run.field_rgba(
@@ -292,6 +295,9 @@ self.onmessage = async (event) => {
         break;
       case "fingerprint":
         payload = pyCall("web_fingerprint", JSON.stringify(arg));
+        break;
+      case "discrepancy":
+        payload = pyCall("web_discrepancy", JSON.stringify(arg));
         break;
       case "field": {
         // Timed in two halves, because the measurement doc decomposes them and a

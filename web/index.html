@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The repressilator, in a browser — Biological Sandbox</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header>
+  <h1>Stochastic replicates, and the deterministic limit they collapse into</h1>
+  <p class="lede">
+    Three genes repressing each other in a cycle. Each run below is a Gillespie
+    simulation of every individual reaction event — and the smooth line underneath
+    is the ordinary differential equation those events converge to as the system
+    gets large. Watching the first settle onto the second is what this project is
+    about.
+  </p>
+  <p class="lede">
+    All of it runs here, in this tab, with no Python installed. It is the same
+    validated code the test suite checks: the project's own wheel, running under
+    Python compiled to WebAssembly, in a background thread.
+  </p>
+  <dl id="build" class="readout"></dl>
+</header>
+
+<section>
+  <h2>1. Watch it run</h2>
+  <p>
+    <strong>Ω is the system size</strong> — how many molecules a concentration of 1
+    corresponds to. Small Ω means few molecules, so every reaction is a visible
+    jolt; large Ω means many, and the jolts average out. Turn it down and the
+    replicates scatter; turn it up and they close on the line.
+  </p>
+
+  <div class="controls">
+    <label>system size Ω
+      <select id="omega">
+        <option value="10">10 — very noisy</option>
+        <option value="30" selected>30</option>
+        <option value="100">100 — close to the limit</option>
+      </select>
+    </label>
+    <label>replicates
+      <select id="replicates">
+        <option>2</option><option selected>4</option><option>6</option>
+      </select>
+    </label>
+    <label>seed
+      <input id="seed" type="number" value="11" style="width: 6rem">
+    </label>
+    <button id="run">run</button>
+    <button id="stop" disabled>stop</button>
+  </div>
+
+  <canvas id="trace-m" style="width: 100%; height: 230px;"></canvas>
+  <canvas id="trace-p" style="width: 100%; height: 230px;"></canvas>
+  <div class="legend" id="legend"></div>
+  <dl id="progress" class="readout"></dl>
+
+  <div class="card note">
+    <h3><span class="badge">WHAT YOU ARE SEEING</span> the thin lines wander off, and that is the physics</h3>
+    <p>
+      Watch the left of the frame and the right. Early on the replicates sit almost
+      on top of the smooth line. Later they are still the same <em>shape</em> — same
+      height, same period — but visibly shifted along the time axis, and they drift
+      further the longer the run goes.
+    </p>
+    <p>
+      That is <strong>phase drift</strong>, and it is not a defect in the
+      simulation. Each random event nudges the oscillator slightly early or
+      slightly late; the amplitude is pulled back by the dynamics, but nothing pulls
+      the <em>timing</em> back, so those nudges accumulate like a random walk. The
+      distance from the limit therefore keeps growing even though each replicate is
+      a perfectly good oscillation.
+    </p>
+    <p>
+      This is also why this model has no single number to check it against. Its
+      limit is a cycle, not a resting point, and an average over replicates that
+      have drifted apart in phase flattens toward the middle — it would describe
+      none of them. Section 3 shows the check declining to run for exactly this
+      reason.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>2. The number under the picture</h2>
+  <p>
+    The eye says the replicates hug the line more tightly at large Ω. The quantity
+    that says it is <strong>D</strong>: the average distance between a replicate and
+    the limit, over the whole run and all six species. Theory (Kurtz) says it should
+    fall like <code>Ω<sup>−1/2</sup></code>.
+  </p>
+  <div class="card note">
+    <h3><span class="badge">READ THIS FIRST</span> what the button below can and cannot show</h3>
+    <p>
+      Three points, six replicates each, about a minute in total. Checked at four
+      different seeds before being put here, it comes out in the right order every
+      time, with the two ends separated by roughly three to five standard errors.
+      So the <em>direction</em> is solid.
+    </p>
+    <p>
+      What it does not do is establish the <strong>exponent</strong>. Three noisy
+      points are consistent with a range of power laws, and the middle one is not
+      cleanly separated from either end. Showing that D falls is a different and much
+      weaker statement than showing it falls like <code>Ω<sup>−1/2</sup></code>.
+    </p>
+    <p>
+      The validated claim is a straight-line fit of <code>log D</code> against
+      <code>log Ω</code>, with a statistical standard error on the slope, over many
+      system sizes and hundreds of replicates each. It is minutes of processor time,
+      it lives in the test suite, and it stays on a real machine. This page shows you
+      the picture; it does not re-derive the result.
+    </p>
+  </div>
+  <p><button id="run-d" disabled>measure D at three system sizes</button></p>
+  <dl id="d-report" class="readout"></dl>
+</section>
+
+<section>
+  <h2>3. The check</h2>
+  <p>
+    A model in this project is finished when its closed-form predictions are
+    reproduced by simulation, within a tolerance derived from the statistics of the
+    measurement rather than typed in by hand. That check runs here, in the browser,
+    on the same code.
+  </p>
+  <p><button id="run-validate" disabled>run the validation suite</button></p>
+  <div id="validation"></div>
+</section>
+
+<section>
+  <h2>What is not here</h2>
+  <p class="muted">
+    The heavy convergence sweeps, the full test suite, and every figure in the
+    repository stay on a real machine — they are minutes of processor time each, and
+    WebAssembly makes that about twice as slow. This page is the demonstration, not
+    the laboratory. Nothing shown here is asserted anywhere; what is asserted is
+    checked natively, and the tolerances are derived, not chosen.
+  </p>
+  <pre id="log"></pre>
+</section>
+
+<script type="module">
+import { WorkerClient, fmt } from "./client.js";
+import { TraceChart, seriesColors } from "./render.js";
+
+const logEl = document.getElementById("log");
+const say = (line) => {
+  logEl.textContent += line + "\n";
+  console.log("[demo] " + line);
+};
+function defList(target, rows) {
+  const el = document.getElementById(target);
+  el.innerHTML = "";
+  for (const [key, value, cls] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (cls) dd.className = cls;
+    el.append(dt, dd);
+  }
+}
+
+const T_MAX = 15.0;
+const BASE = { alpha: 216.0, alpha0: 0.216, n_hill: 2.0, beta: 1.0 };
+
+// Measured, not guessed: this model costs about 470 events per time unit per unit
+// of Omega (56 184 events for t = 12 at Omega = 10; 226 000 at Omega = 40, i.e.
+// linear in Omega). A budget below that stops the replicates early and leaves the
+// limit alone on the right of the frame, which looks like agreement.
+const EVENTS_PER_UNIT_OMEGA_TIME = 470;
+const budgetFor = (omega, tMax) =>
+  Math.ceil(1.6 * EVENTS_PER_UNIT_OMEGA_TIME * omega * tMax);
+
+function specFor(omega, replicates, seed, tMax = T_MAX) {
+  return {
+    model: "repressilator",
+    params: { ...BASE, Omega: omega, t_max: tMax },
+    replicates,
+    seed,
+    max_steps: budgetFor(omega, tMax),
+    record_every: Math.max(1, Math.round(budgetFor(omega, tMax) / 2500)),
+    limit: { t_max: tMax, dt: 0.005 },
+  };
+}
+
+const client = new WorkerClient("./worker.js");
+say("starting Python in a background thread ...");
+const build = await client.send("boot");
+defList("build", [
+  ["running", `Python ${build.python} · NumPy ${build.numpy} · Pyodide ${build.pyodide}`],
+  ["package", `biological-sandbox ${build.sandbox} · wheel ${build.wheel_sha256.slice(0, 12)}…`],
+  ["ready in", `${fmt(build.timings.total_s)} s`],
+]);
+say("ready.");
+
+// -------------------------------------------------------------------------
+// 1. The run
+// -------------------------------------------------------------------------
+const charts = [
+  new TraceChart(document.getElementById("trace-m"), {
+    title: "mRNA",
+    xLabel: "",
+    yLabel: "x = n / Ω",
+    xMax: T_MAX,
+  }),
+  new TraceChart(document.getElementById("trace-p"), {
+    title: "protein",
+    xLabel: "time (in mRNA lifetimes)",
+    yLabel: "x = n / Ω",
+    xMax: T_MAX,
+  }),
+];
+const drawAll = () => charts.forEach((c) => c.draw());
+addEventListener("resize", drawAll);
+
+const runButton = document.getElementById("run");
+const stopButton = document.getElementById("stop");
+let liveRun = null;
+
+runButton.addEventListener("click", async () => {
+  runButton.disabled = true;
+  stopButton.disabled = false;
+  document.getElementById("run-d").disabled = true;
+  document.getElementById("run-validate").disabled = true;
+
+  const omega = Number(document.getElementById("omega").value);
+  const replicates = Number(document.getElementById("replicates").value);
+  const seed = Number(document.getElementById("seed").value);
+  const spec = specFor(omega, replicates, seed);
+
+  const created = await client.send("create", spec);
+  liveRun = created.run_id;
+
+  // The series come from the model, in the order the model reports them. Never a
+  // name filter: the first repressilator figure ever rendered in a browser for
+  // this project was a valid PNG with correct axes and no data at all, because a
+  // filter tested startswith("m") against series named x_m1 … x_p3.
+  const keys = created.observable_keys;
+  const half = keys.length / 2;
+  charts[0].reset({ keys: keys.slice(0, half), xMax: T_MAX });
+  charts[1].reset({ keys: keys.slice(half), xMax: T_MAX });
+
+  const colors = seriesColors();
+  document.getElementById("legend").innerHTML = keys
+    .map(
+      (key, i) =>
+        `<span><i class="swatch" style="background:${colors[i % half % colors.length]}"></i>${key}</span>`
+    )
+    .join("");
+
+  say(`Ω = ${omega}: integrating the limit ...`);
+  const limit = await client.send("limit", spec);
+  charts.forEach((c) => c.setLimit(limit));
+  drawAll();
+
+  say(`Ω = ${omega}: running (up to ${spec.max_steps.toLocaleString()} reaction events) ...`);
+  const started = performance.now();
+  const final = await client.send(
+    "run",
+    { run_id: created.run_id, n_steps: spec.max_steps, chunk: 4000, every_ms: 50 },
+    (progress) => {
+      progress.data.replicates.forEach((part, i) => charts.forEach((c) => c.append(i, part)));
+      drawAll();
+      const t = progress.status.t.map((v) => (v ?? 0).toFixed(1)).join(" / ");
+      defList("progress", [
+        ["system size", `Ω = ${omega}, ${replicates} replicates, seed ${seed}`],
+        ["events so far", progress.status.steps.map((n) => n.toLocaleString()).join(" / ")],
+        ["simulated time", `${t}  of ${T_MAX}`],
+        ["elapsed", `${((performance.now() - started) / 1000).toFixed(1)} s`],
+      ]);
+    }
+  );
+  drawAll();
+
+  // Did every replicate reach the horizon the limit is drawn across? A run that
+  // stops early leaves the limit alone on the right-hand side of the frame, and
+  // that reads as perfect agreement rather than as absence.
+  const reached = final.terminal.every(Boolean);
+  defList("progress", [
+    ["system size", `Ω = ${omega}, ${replicates} replicates, seed ${seed}`],
+    ["reaction events", final.steps.map((n) => n.toLocaleString()).join(" / ")],
+    [
+      "reached the end",
+      reached
+        ? `yes — every replicate ran the full t = ${T_MAX}`
+        : `NO — stopped early at t = ${final.t.map((v) => (v ?? 0).toFixed(1)).join(" / ")}; ` +
+          "the right-hand side of the frame shows the limit alone, not agreement",
+      reached ? "ok" : "bad",
+    ],
+    ["stepping", `${fmt(final.compute_seconds)} s of processor time`],
+    ["wall clock", `${((performance.now() - started) / 1000).toFixed(1)} s`],
+  ]);
+  say(`Ω = ${omega}: done, ${final.steps[0].toLocaleString()} events per replicate.`);
+
+  await client.send("close", { run_id: created.run_id });
+  liveRun = null;
+  runButton.disabled = false;
+  stopButton.disabled = true;
+  document.getElementById("run-d").disabled = false;
+  document.getElementById("run-validate").disabled = false;
+});
+
+stopButton.addEventListener("click", async () => {
+  if (liveRun) await client.send("cancel", { run_id: liveRun });
+  stopButton.disabled = true;
+});
+
+// -------------------------------------------------------------------------
+// 2. D
+// -------------------------------------------------------------------------
+document.getElementById("run-d").disabled = false;
+document.getElementById("run-d").addEventListener("click", async () => {
+  const button = document.getElementById("run-d");
+  button.disabled = true;
+  // Seed-verified before being shipped, the way a tolerance is in this project:
+  // at t_max = 8 with 6 replicates and Omega in {5, 15, 45}, the three points came
+  // out monotone at 4 seeds out of 4, with the ends separating by 2.8 / 3.0 / 4.9
+  // / 2.8 standard errors and nothing truncated. A first draft used 3 replicates
+  // over t_max = 6 and read 2.60 / 3.50 / 1.51 -- out of order, and it would have
+  // shipped a panel whose picture contradicted its caption.
+  const tMax = 8.0;
+  const replicates = 6;
+  const seed = Number(document.getElementById("seed").value) || 1;
+  const rows = [];
+  const measured = [];
+
+  for (const omega of [5, 15, 45]) {
+    say(`D at Ω = ${omega} ...`);
+    const point = await client.send("discrepancy", {
+      ...specFor(omega, replicates, seed, tMax),
+      record_every: 1,
+    });
+    measured.push({ omega, ...point });
+    rows.push([
+      `Ω = ${omega}`,
+      `D = ${fmt(point.D)} ± ${fmt(point.sem)}   (${point.replicates} replicates)   ` +
+        `→ D·√Ω = ${fmt(point.D * Math.sqrt(omega))}` +
+        (point.truncated.length ? `   — ${point.truncated.length} replicate(s) stopped early` : ""),
+    ]);
+  }
+
+  // Say out loud whether these points actually separate, rather than letting a
+  // reader infer a trend from three numbers with error bars they were not shown.
+  const [a, , c] = measured;
+  const gap = a.D - c.D;
+  const combined = Math.hypot(a.sem, c.sem);
+  const resolved = gap > 2 * combined;
+  const ratio = Math.sqrt(c.omega / a.omega);
+  rows.push([
+    "the law, if it holds",
+    `D·√Ω should be the same at every Ω. Across a ${(c.omega / a.omega).toFixed(0)}x range ` +
+      `it reads ${measured.map((m) => fmt(m.D * Math.sqrt(m.omega))).join(" / ")}.`,
+  ]);
+  rows.push([
+    "do the ends separate?",
+    resolved
+      ? `yes — Ω = ${a.omega} sits ${(gap / combined).toFixed(1)} standard errors above ` +
+        `Ω = ${c.omega}. Ω^(−1/2) predicts a fall by a factor of ${ratio.toFixed(1)}; ` +
+        `measured ${(a.D / c.D).toFixed(2)}.`
+      : `NO — the ends differ by only ${(gap / combined).toFixed(1)} standard errors, which ` +
+        "settles nothing. Run it again with a different seed and the order may change. " +
+        "That is the sample size talking.",
+    resolved ? "ok" : "warn",
+  ]);
+  rows.push([
+    "and still not the claim",
+    measured[0].claim,
+  ]);
+
+  defList("d-report", rows);
+  button.disabled = false;
+  say("D done.");
+});
+
+// -------------------------------------------------------------------------
+// 3. Validation
+// -------------------------------------------------------------------------
+const VALIDATION_CASES = [
+  {
+    title: "Wright-Fisher — the probability an allele takes over",
+    plain:
+      "A population of 200 carries two versions of a gene, one at 30%. With no " +
+      "selection, the chance that version eventually takes over the whole " +
+      "population is exactly 30% — its starting frequency. The simulation has to " +
+      "reproduce that, within a tolerance computed from the spread of the runs.",
+    spec: {
+      model: "wright_fisher",
+      params: { N: 200, p0: 0.3 },
+      replicates: 400,
+      seed: 20260817,
+      max_steps: 20000,
+      record_every: 1,
+    },
+  },
+  {
+    title: "Repressilator — and why it refuses",
+    plain:
+      "The same check on the model above returns nothing, and that is correct. " +
+      "Its limit is a cycle rather than a resting point, so there is no single " +
+      "number for an average to match. Reporting a tolerance here would be " +
+      "theatre. Its checkable claim is the convergence you can see in section 2 — " +
+      "and that claim is the slope, which is checked on a real machine.",
+    spec: specFor(30, 3, 1, 4.0),
+  },
+];
+
+document.getElementById("run-validate").disabled = false;
+document.getElementById("run-validate").addEventListener("click", async () => {
+  const button = document.getElementById("run-validate");
+  button.disabled = true;
+  const target = document.getElementById("validation");
+  target.innerHTML = "";
+
+  for (const entry of VALIDATION_CASES) {
+    say(`validating ${entry.spec.model} ...`);
+    const report = await client.send("validate", entry.spec);
+    const card = document.createElement("div");
+    const verdict = report.validatable ? (report.passed ? "PASS" : "FAIL") : "NO CHECK TO RUN";
+    card.className = "card " + (report.validatable ? (report.passed ? "good" : "bad") : "note");
+    card.innerHTML =
+      `<h3><span class="badge">${verdict}</span> ${entry.title}</h3>` +
+      `<p>${entry.plain}</p>` +
+      (report.validatable
+        ? report.checks
+            .map(
+              (check) =>
+                `<p><code>${check.line}</code></p>` +
+                `<p class="muted">predicted ${fmt(check.predicted)}, measured ` +
+                `${fmt(check.measured)} over ${check.n} runs; the tolerance is ` +
+                `${check.z} standard errors of that mean — ${fmt(check.tolerance)} — ` +
+                `so it tightens as more runs are added rather than staying put.</p>`
+            )
+            .join("")
+        : `<p class="muted">${report.reason}</p>`);
+    target.append(card);
+  }
+  button.disabled = false;
+  say("validation done.");
+});
+</script>
+</body>
+</html>
