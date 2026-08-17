@@ -37,14 +37,16 @@ where they are readable; at 8 MB the copy is 24x worse on a quiet machine and
 | `boot` | `{}` | build report: pyodide/python/numpy versions, wheel sha256 + size, per-stage seconds |
 | `describe` | `{}` | `{models: [{name, validatable, terminable, deterministic_limit, fields, params_from_json}], colormaps}` |
 | `defaults` | `{model}` | the params dataclass's defaults; `null` marks a field with no default |
-| `create` | spec (below) | `{run_id, model, replicates, observable_keys, fields, max_steps, record_every, ...}` |
+| `create` | spec (below) | `{run_id, model, replicates, observable_keys, fields, field_shapes, max_steps, record_every, ...}` |
 | `advance` | `{run_id, n_steps}` | `{steps_taken, steps, t, terminal, finished, pending}` |
 | `drain` | `{run_id}` | `{replicates: [{from, t, series}]}` — everything recorded since the last drain, once |
 | `run` | `{run_id, n_steps, chunk, every_ms, quiet}` | drives `advance`+`drain` in a loop inside the worker, emitting `progress` events; resolves with the final status |
-| `cancel` | `{run_id}` | asks a live `run` loop to stop at its next chunk boundary |
+| `cancel` | `{run_id}` | `{cancelling: true, when}` — stops the run at its next chunk boundary, or before its first step if no loop is running yet |
 | `status` | `{run_id}` | as `create`, plus `recorded` |
 | `field` | `{run_id, field, cmap, vmin, vmax, replicate}` | `{width, height, vmin, vmax, t, ...}` + transferred `rgba` |
 | `colormap_strip` | `{cmap, width, height}` | a colour ramp as `rgba`, for a scale bar drawn by the same code as the image |
+| `figure_available` | `{}` | `{ready, available, reason}` — is matplotlib staged, and is it loaded yet |
+| `figure` | `{run_id, observables, limit, title, dpi}` | `{bytes, observables, limit_drawn_for, load_ms, import_seconds, render_seconds, ...}` + the PNG as transferred `rgba`. **Loads matplotlib on first use** |
 | `limit` | spec with a `limit` block | `{available, t, series}` or `{available: false, reason}` |
 | `validate` | spec | `{validatable, passed, reason, checks: [...]}` |
 | `fingerprint` | spec | `{digests, recorded, steps}` — sha256 per replicate, **informational** |
@@ -108,6 +110,72 @@ of yields, looking exactly like a real per-yield cost. It is Chrome
 deprioritizing a background renderer: every yield hands the worker back to a
 throttled scheduler. The same conditions make the worker look 2-2.8x slower than
 the main thread, which it is not (0.89-0.99x when visible).
+
+## Cancelling, and the window where it used to be dropped
+
+`cancel` is a fact about the **run**, not about whichever loop happens to be live.
+It has to be, because a page holds a `run_id` before anything is stepping it: the
+demo creates the run, integrates the deterministic limit (a visible pause), and
+only then sends `run`. A cancel arriving in that window has no loop to set a flag
+on. The first version simply reported `cancelling: false` and dropped it, and the
+page — which ignored that field — disabled its stop button and let the run go to
+completion with nothing able to stop it.
+
+So a cancel with no live loop is **remembered** and applied when the loop starts,
+which then returns immediately with `stepped: 0` and `terminal` still false. The
+reply's `when` is `"running"` or `"before-first-step"`, so a page can say which
+happened instead of inferring it. `close` forgets any pending cancel; run ids are
+monotonic within a session, so a forgotten one could not have collided anyway.
+
+`run` resolves with `cancelled: true`, and a page that reports "did every
+replicate reach the horizon" should distinguish that from running out of budget:
+the picture is identical — the limit alone on the right of the frame — but one is
+something you did and the other is something the page got wrong.
+
+Cancel is checked for **correctness** and not for latency. It lands at the loop's
+`await setTimeout(0)` yield, and this project's own measurements say a hidden tab
+hands the worker back to a throttled scheduler at exactly that point, so a
+cancel-latency figure taken by automation would be a number about tab visibility
+wearing the costume of a number about the protocol.
+
+## The figure export, and why it is the only command that downloads anything
+
+`figure` renders a static PNG of a finished run, and it is the single place in the
+front end that fetches a package. matplotlib and its **eleven** dependencies
+multiply the gzipped download **2.1x — 8.7 MB to 18.4 MB** — to buy static PNGs,
+so they are *staged* beside the runtime by `serve.py --with-figures` and never
+fetched until somebody presses the button. Verified rather than asserted: a cold
+boot of `index.html` still pulls **9.01 MB**, the recorded figure, with zero
+matplotlib bytes on it.
+
+The dependency closure is resolved from `pyodide-lock.json` transitively, never
+hand-typed, in both `serve.py` and the worker. A typed wheel name is a name that
+goes stale against the next Pyodide release with nothing saying so until the
+button is pressed.
+
+The drawing itself is `viz/backends/matplotlib_backend.plot_replicates` — the
+project's own teaching figure, exercised by the suite — rather than a second
+plotting path free to drift from the one every recorded figure was made with. The
+limit's columns are matched to the trace **by observable name**: on a symmetric
+limit cycle the wrong column is the right shape at the wrong phase, which looks
+entirely plausible.
+
+Three costs are reported separately because they differ by an order of magnitude
+and one number would misprice all three: `load_ms` to fetch and install (once per
+worker), `import_seconds` to import, `render_seconds` to draw. Measured in the
+browser off a local server: **0.52 s / 1.24 s / 0.58 s** for a six-panel,
+two-replicate figure at 179 KB. The 0.52 s is a **local** fetch of ~10 MB and is
+not a network measurement.
+
+## Fields are not necessarily two-dimensional
+
+`FieldModel` does not say *two*-dimensional, and one model takes it at its word:
+`trait_branching` declares `abundance` with shape `(161,)`, the trait grid.
+`field_rgba` renders an image and refuses it, correctly — so `create` also reports
+`field_shapes`, and a page checks the shape before offering a picture rather than
+discovering it from an exception where the picture was going to be. Filtering the
+1-D field out of `fields` would be worse: the model does declare it, and silently
+omitting a model's own output is the more expensive lie.
 
 ## Errors
 

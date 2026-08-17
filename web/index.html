@@ -50,7 +50,11 @@
     <label>seed
       <input id="seed" type="number" value="11" style="width: 6rem">
     </label>
-    <button id="run">run</button>
+    <!-- disabled until the worker has booted, like the two buttons below it. The
+         click listener is attached after `await boot`, so a run clicked before
+         then lands on a button with no listener and does nothing at all -- an
+         unresponsive page rather than a slow one, and no way to tell which. -->
+    <button id="run" disabled>run</button>
     <button id="stop" disabled>stop</button>
   </div>
 
@@ -58,6 +62,12 @@
   <canvas id="trace-p" style="width: 100%; height: 230px;"></canvas>
   <div class="legend" id="legend"></div>
   <dl id="progress" class="readout"></dl>
+
+  <p>
+    <button id="export" disabled>export this run as a figure</button>
+    <span class="muted" id="export-note"></span>
+  </p>
+  <div id="export-out"></div>
 
   <div class="card note">
     <h3><span class="badge">WHAT YOU ARE SEEING</span> the thin lines wander off, and that is the physics</h3>
@@ -220,11 +230,20 @@ addEventListener("resize", drawAll);
 
 const runButton = document.getElementById("run");
 const stopButton = document.getElementById("stop");
+runButton.disabled = false;
 let liveRun = null;
+// A stop is remembered rather than acted on immediately, because for most of the
+// interval the button is enabled there is nothing yet to cancel: the run id does
+// not exist until `create` returns, and the worker's stepping loop does not exist
+// until `run` starts. Both windows are reachable by an ordinary click -- the
+// limit integration between them is a visible pause -- and in both the click used
+// to disable the button and do nothing at all.
+let stopRequested = false;
 
 runButton.addEventListener("click", async () => {
   runButton.disabled = true;
   stopButton.disabled = false;
+  stopRequested = false;
   document.getElementById("run-d").disabled = true;
   document.getElementById("run-validate").disabled = true;
 
@@ -233,8 +252,19 @@ runButton.addEventListener("click", async () => {
   const seed = Number(document.getElementById("seed").value);
   const spec = specFor(omega, replicates, seed);
 
+  // The previous run is closed HERE rather than when it finished, so that a
+  // finished run is still around to export a figure of. One run's worth of
+  // recorded trajectory is the cost, and the alternative -- re-running the spec
+  // at export time -- would render a figure of a *different* run than the one on
+  // screen, which is worse than it sounds for a stochastic model.
+  if (lastRun) {
+    await client.send("close", { run_id: lastRun.run_id });
+    lastRun = null;
+  }
+
   const created = await client.send("create", spec);
   liveRun = created.run_id;
+  if (stopRequested) await client.send("cancel", { run_id: liveRun });
 
   // The series come from the model, in the order the model reports them. Never a
   // name filter: the first repressilator figure ever rendered in a browser for
@@ -280,7 +310,12 @@ runButton.addEventListener("click", async () => {
   // Did every replicate reach the horizon the limit is drawn across? A run that
   // stops early leaves the limit alone on the right-hand side of the frame, and
   // that reads as perfect agreement rather than as absence.
+  //
+  // Stopped BY YOU and stopped by running out of budget produce the same picture
+  // and are different facts, so they get different rows: one is a thing you did,
+  // the other is a thing the page got wrong.
   const reached = final.terminal.every(Boolean);
+  const stoppedAt = final.t.map((v) => (v ?? 0).toFixed(1)).join(" / ");
   defList("progress", [
     ["system size", `Ω = ${omega}, ${replicates} replicates, seed ${seed}`],
     ["reaction events", final.steps.map((n) => n.toLocaleString()).join(" / ")],
@@ -288,26 +323,110 @@ runButton.addEventListener("click", async () => {
       "reached the end",
       reached
         ? `yes — every replicate ran the full t = ${T_MAX}`
-        : `NO — stopped early at t = ${final.t.map((v) => (v ?? 0).toFixed(1)).join(" / ")}; ` +
-          "the right-hand side of the frame shows the limit alone, not agreement",
-      reached ? "ok" : "bad",
+        : final.cancelled
+          ? `no — you stopped it at t = ${stoppedAt} of ${T_MAX}. Everything drawn is ` +
+            "real; the frame simply ends early, so the limit past that point has " +
+            "nothing to be compared against."
+          : `NO — stopped early at t = ${stoppedAt}; ` +
+            "the right-hand side of the frame shows the limit alone, not agreement",
+      reached ? "ok" : final.cancelled ? "warn" : "bad",
     ],
     ["stepping", `${fmt(final.compute_seconds)} s of processor time`],
     ["wall clock", `${((performance.now() - started) / 1000).toFixed(1)} s`],
   ]);
-  say(`Ω = ${omega}: done, ${final.steps[0].toLocaleString()} events per replicate.`);
+  say(
+    `Ω = ${omega}: ${final.cancelled ? "stopped" : "done"}, ` +
+      `${final.steps[0].toLocaleString()} events per replicate.`
+  );
 
-  await client.send("close", { run_id: created.run_id });
+  lastRun = { run_id: created.run_id, omega, replicates, seed, limit };
   liveRun = null;
   runButton.disabled = false;
   stopButton.disabled = true;
   document.getElementById("run-d").disabled = false;
   document.getElementById("run-validate").disabled = false;
+  if (support.available) {
+    exportButton.disabled = false;
+    exportNote.textContent = support.ready
+      ? "matplotlib is already loaded in this tab"
+      : "the first export fetches matplotlib — the download the bundle does not carry";
+  }
 });
 
 stopButton.addEventListener("click", async () => {
-  if (liveRun) await client.send("cancel", { run_id: liveRun });
+  stopRequested = true;
   stopButton.disabled = true;
+  say("stop requested ...");
+  if (liveRun) {
+    const ack = await client.send("cancel", { run_id: liveRun });
+    say(`stop acknowledged (${ack.when}).`);
+  }
+});
+
+// -------------------------------------------------------------------------
+// Exporting a figure — the one action that downloads anything
+//
+// matplotlib and its eleven dependencies are staged beside the runtime and NOT in
+// the bundle: they multiply the gzipped download 2.1x, from 8.7 MB to 18.4 MB, to
+// buy static PNGs. So nothing fetches them until this button is pressed, and the
+// page prices the press rather than describing it as fast.
+// -------------------------------------------------------------------------
+const exportButton = document.getElementById("export");
+const exportNote = document.getElementById("export-note");
+let lastRun = null; // {run_id, spec, limit} — the run the figure would be OF
+
+const support = await client.send("figure_available");
+if (!support.available) {
+  exportNote.textContent =
+    "unavailable — " + (support.reason || "matplotlib is not staged on this server");
+} else {
+  exportNote.textContent = "run something first; the figure is of that run";
+}
+
+exportButton.addEventListener("click", async () => {
+  if (!lastRun) return;
+  exportButton.disabled = true;
+  exportNote.textContent = support.ready
+    ? "rendering ..."
+    : "fetching matplotlib (this is the download the bundle does not carry) ...";
+  try {
+    const figure = await client.send("figure", {
+      run_id: lastRun.run_id,
+      limit: lastRun.limit,
+      title: `repressilator, Ω = ${lastRun.omega}, ${lastRun.replicates} replicates, seed ${lastRun.seed}`,
+    });
+    support.ready = true;
+
+    const blob = new Blob([figure.rgba], { type: "image/png" });
+    const url = URL.createObjectURL(blob);
+    const out = document.getElementById("export-out");
+    out.innerHTML = "";
+    const image = new Image();
+    image.src = url;
+    image.style.maxWidth = "100%";
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `repressilator-omega-${lastRun.omega}-seed-${lastRun.seed}.png`;
+    link.textContent = "save this PNG";
+    out.append(image, document.createElement("br"), link);
+
+    // Both halves, because they differ by an order of magnitude and one figure
+    // for "the cost of exporting" would misprice whichever one you cared about.
+    exportNote.textContent =
+      `${(figure.bytes / 1024).toFixed(0)} KB · ` +
+      (figure.loaded_now
+        ? `${(figure.load_ms / 1000).toFixed(2)} s to fetch and install matplotlib (once per tab), `
+        : "matplotlib already loaded, ") +
+      `${fmt(figure.import_seconds)} s to import, ${fmt(figure.render_seconds)} s to draw` +
+      (figure.limit_drawn_for.length
+        ? `. The limit is drawn on all ${figure.limit_drawn_for.length} panels.`
+        : ". No limit was drawn on any panel.");
+    say(`figure exported: ${figure.bytes} bytes.`);
+  } catch (error) {
+    exportNote.textContent = "could not render: " + error.message;
+    say(`figure export failed: ${error.message}`);
+  }
+  exportButton.disabled = false;
 });
 
 // -------------------------------------------------------------------------

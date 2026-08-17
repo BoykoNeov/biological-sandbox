@@ -81,14 +81,64 @@ avoid, in a language no test here can reach.
 
 ## Status
 
-**Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c).** The record with
-every number is `docs/plans/phase4-tasks.md`; the plan is
+**Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c), and its three
+recorded deferrals are now built too.** The record with every number is
+`docs/plans/phase4-tasks.md` (§9 for the deferrals); the plan is
 `docs/plans/phase4-plan.md`. `src/sandbox/web/{bridge,colormap}.py` plus `web/`
-(worker, client, two renderers, four pages, a staging-and-serving script) and
-`tests/test_web_bridge.py` (56 tests). Serve it with
+(worker, client, two renderers, five pages, a staging-and-serving script) and
+`tests/test_web_{bridge,assets}.py` (56 + 68 tests). Serve it with
 `uv run python web/serve.py --pyodide-src <dir>` (or `--download`); it rebuilds
 the wheel on every start and the page displays its sha256, because **a stale
-wheel runs old code and passes every check silently**.
+wheel runs old code and passes every check silently**. Add `--with-figures` for
+the on-demand figure export, and `--measure-presets` prices every model-picker
+preset to termination.
+
+**The three deferrals, and the reason to read §9: every one of them was broken in
+a way only doing it could show, and two were in code that had been read and
+called correct.** The `stop` button did nothing at all for the window between
+`create` and `run` — the pause a page spends integrating the deterministic limit
+— because a cancel arriving then had no loop to set a flag on; the worker replied
+`cancelling: false` and the page threw that away, disabled the button, and let the
+run finish with nothing able to stop it. A cancel is a fact about the **run**, not
+about whichever loop is live. Clicked for real it now stops at `116 000` of a
+`338 400`-event budget and says *you* stopped it, which is a different fact from
+running out of budget and produces an identical picture.
+
+**The model picker (`web/models.html`) is driven by `describe` and
+`default_params`, and driving all fourteen models found three defects three pages
+had not.** `web_field` broke on a JS `null`, because **Pyodide 0.28 maps `null` to
+a `JsNull` singleton and not to `None`** — invisible because no page autoscaled.
+`glv_stochastic` can never have its ODE limit drawn (five observables against a
+three-component ODE: two are derived), and the bridge's one-to-one refusal is
+right. And **a `FieldModel`'s field need not be 2-D** — `trait_branching`'s is the
+`(161,)` trait grid — so `create` now reports `field_shapes`. Its budgets are
+**measured** (`--measure-presets`), never carried over from the demo's
+repressilator-specific `470 events per unit`, and it reports whether the
+replicates are actually different by **comparing what was drawn**, so three
+bit-identical curves are named as one curve drawn three times rather than shown as
+a spread.
+
+**The figure export reuses `plot_replicates` rather than a second plotting path,
+matches limit columns by observable NAME (the wrong column is the right shape at
+the wrong phase), and the deferral's own constraint was verified rather than
+assumed: with all 13.09 MB of matplotlib wheels staged, a cold boot still pulls
+`9.01 MB` — the recorded figure, unchanged — with zero matplotlib bytes on it.**
+Costs are three numbers, not one: `0.52 s` local fetch-and-install (once per
+worker), `1.24 s` import, `0.58 s` draw. The browser's import is ~3x the native
+repeat because Pyodide has no persistent font cache.
+
+**`tests/test_web_assets.py` (68 tests, 2.2 s, no browser) exists because every
+bug above was found by opening one.** It compiles the Python that `worker.js`
+embeds in a JS template literal — and earned itself immediately: writing the
+comment about the `JsNull` fix, backticks around the word `null` **ended the
+template literal and broke the whole worker**, hanging the page on "starting
+Python …" with an empty console, because the failure killed the module script
+before it could log. All six mutations bite the intended test. One test was wrong
+and the model right (a 100-recorded-point floor failed `adaptive_dynamics` at 57,
+whose jump process has 57 events in the entire run — a floor on point count is a
+claim about the model; a preset can only be held to its *thinning*), and one was
+wrong the other way (comparing presets to `available()` passes alone and fails in
+the suite, because other modules register teeth models into the same registry).
 
 **The browser's verdict matches native**, computed same-commit and same-machine
 rather than pasted from a previous session: Wright-Fisher `[PASS] fixed_A:
@@ -169,8 +219,15 @@ demonstration. **A fourth was corrected in the opposite direction**: the demo's
 the seed check had just disproved — being falsely modest about a measurement is
 the same failure as overclaiming it.
 
-**Suite: 776 passed in 346.23 s at `-n 6`**, against a same-session baseline of
-**720 passed in 286.12 s** with the bridge tests ignored. The decomposition is
+**Suite (deferrals built): 844 passed, 11 skipped in 254.76 s at `-n 6`**, against
+a same-session baseline of **776 passed in 407.13 s** with the new module ignored
+— i.e. *faster with 68 more tests*, so by this project's own rule the totals are
+not attributable to the test set and no regression is visible. Three runs in that
+session read `407 / 342 / 255 s`, a drift larger than anything being measured.
+What is attributable is the module's standalone cost: **2.2 s**.
+
+**Suite (Phase 4 close-out): 776 passed in 346.23 s at `-n 6`**, against a
+same-session baseline of **720 passed in 286.12 s** with the bridge tests ignored. The decomposition is
 the cleanest this project has managed: the total grew by `+60.11 s`, and the two
 repressilator tests — untouched by Phase 4 — grew by `+62.15 s`, **more than the
 entire gap**, while everything else fell slightly (`70.14 → 68.10 s`). No cost

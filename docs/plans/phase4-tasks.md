@@ -379,27 +379,172 @@ close-out's `225.80-303.91 s` and the `373.81 s` re-run are from different machi
 states. What survives contention is the *decomposition*, because both arms were
 contended together.
 
-## 9. Deferred, and not silently
+## 9. The three deferrals, now built — and what building them found
 
-Three things the plan raises that this phase did **not** build. None is a
-blocker; all are stated rather than dropped.
+All three items §9 recorded as deferred are done. Each is worth reading for the
+same reason: **every one of them was broken in a way that only doing it could
+show**, and two of the three defects were in code that had been read and
+pronounced correct.
 
-- **No "export a figure" action.** The plan's 4b says matplotlib *"belongs behind
-  an explicit 'export a figure' action that loads it on demand — not on the path
-  a reader takes to see anything."* The constraint is satisfied — matplotlib is
-  absent from the bundle, and the 9.01 MB cold load in §4 is the core-only figure
-  rather than the 18.4 MB one — but the on-demand action itself was not written.
-  A page that wants a static PNG would need it; nothing here does.
-- **No model picker in the UI.** 4a's deliverable is that *any* registered model
-  runs in a worker, and that is true of the bridge and exercised natively: the
-  registry check covers all 14, `describe` reports each model's capabilities from
-  `isinstance` against the protocol classes, and `default_params` exists to
-  pre-fill a form. But the pages only ever drive three models. The `describe`-
-  driven picker is UI work with no measurement in it.
-- **The `stop` button is untested.** The path reads correctly — `cancel` sets the
-  flag, the worker's loop breaks at the next chunk boundary, `terminal` stays
-  false, and the "reached the end" row reports *"stopped early"* — but it was
-  never actually clicked. Noted rather than claimed.
+### 9a. The stop button — it was broken, and reading it again is what found it
+
+The deferral said *"the path reads correctly … but it was never actually
+clicked."* Reading it a second time found a window in which it did nothing at
+all. A page holds a `run_id` **before** anything is stepping it — the demo
+creates the run, integrates the deterministic limit (a visible pause), and only
+then sends `run` — and a `cancel` arriving in that window had no loop to set a
+flag on. The worker replied `cancelling: false`; the page ignored that field,
+disabled its stop button, and let the run go to completion **with nothing able to
+stop it**.
+
+A cancel is a fact about the *run*, not about whichever loop happens to be live,
+so one arriving early is now remembered and applied when the loop starts, which
+returns immediately with `stepped: 0` and `terminal` still false. The reply
+carries `when` — `"running"` or `"before-first-step"` — so a page says which
+happened instead of inferring it.
+
+`check.html` §5 checks three cases and is confirmed able to fail: reverting the
+worker to the old semantics leaves (a) and (c) green and fails (b) with the run
+taking **the full 60 000 events despite having been cancelled**. Then the button
+was actually clicked, which is what the deferral was about: at Ω = 30 with four
+replicates it stopped at **116 000 of a 338 400-event budget**, the replicate
+lines end at `t = 11.0 / 9.0 / 8.9 / 9.3` while the limit runs to 15, and the
+readout attributes that to *you* rather than to a budget shortfall. Those are
+different facts producing an identical picture, and the page now separates them.
+
+**Correctness only, and not latency.** A cancel lands at the stepping loop's
+`await setTimeout(0)`, which is exactly where a hidden tab hands the worker back
+to a throttled scheduler, so a cancel-latency figure taken by automation would be
+a number about tab visibility wearing the costume of a number about the protocol.
+
+A second, smaller defect fell out of clicking: **the run button was clickable
+before boot finished.** Its listener is attached after `await boot`, so an early
+click landed on a button with no listener and did nothing — an unresponsive page
+rather than a slow one, with no way to tell which. It now starts disabled, like
+the two buttons under it.
+
+### 9b. The model picker — `web/models.html`, and it found three real defects
+
+Driven entirely by `describe` and `default_params`, so the list, the capability
+flags and the parameter fields are asked for at run time and adding a model to
+the project adds it to the page. **13 of the 14 were driven through it in the
+browser** (the 14th is the repressilator, which is `index.html`'s own model), and
+all 14 are covered natively by `tests/test_web_assets.py`. Driving all of them
+found three things three pages had not:
+
+- **The field path was broken for its only untaken branch.** `web_field` received
+  a JS `null` for an absent `vmin`/`vmax`, and Pyodide 0.28 maps `null` to a
+  **`JsNull` singleton, not to `None`** — so `vmin is None` was false and
+  `float(vmin)` raised. Nothing caught it because no page autoscaled: `draw.html`
+  deliberately fixes its range. Now JSON in, like every other entry point, where
+  there is no JS value left to mistranslate.
+- **A model can declare an ODE limit it can never have drawn.** `glv_stochastic`
+  reports five observables — three species plus `total_biomass` and
+  `n_survivors` — against a three-component ODE, and the bridge overlays the
+  limit column by column and refuses anything not corresponding one-to-one. The
+  refusal is right; declaring the block was the error. Any model reporting
+  *derived* observables alongside its state has the same problem.
+- **A `FieldModel`'s field need not be 2-D.** `trait_branching` declares
+  `abundance` with shape `(161,)`, the trait grid, and the image path needs two
+  dimensions. `create` now reports `field_shapes` so a page can say which it is
+  *before* drawing, rather than putting an exception where the picture was going
+  to be. Filtering it out of `fields` was the alternative and is worse — the
+  model does declare it, and silently omitting a model's own output is the more
+  expensive lie.
+
+Two hazards the page was built to avoid, both from this project's own record.
+**The budget is measured, not guessed:** the demo's `470 events per time unit per
+unit of Omega` is a *repressilator* number, and reusing it would be the recorded
+mistake of carrying a constant away from its estimator, so
+`serve.py --measure-presets` prices every preset to termination and the numbers
+live in `web/presets.json` beside the params that produced them. And **the page
+says whether the replicates are actually different**, measured from what was
+drawn rather than looked up in a table of which models are stochastic — because
+three bit-identical curves drawn on top of each other look exactly like one, and
+a legend claiming three is then a figure making a false claim. Checked on
+`hodgkin_huxley` at three replicates: *"no — all 3 are bit-identical … you are
+looking at one curve drawn 3 times, not at a spread."*
+
+The presets are **data**, not page code, for the reason `conformance.json` is:
+every params block is copied from a demo or a test that already runs it, with
+`source` naming which, so no configuration on that page was invented.
+
+### 9c. The figure export — and the cold load held at 9.01 MB
+
+`bridge.figure_png` renders a finished run through
+`viz/backends/matplotlib_backend.plot_replicates` — the project's own teaching
+figure, already exercised by the suite — rather than a second plotting path free
+to drift from the one every recorded figure was made with. The limit's columns
+are matched to the trace **by observable name**, never by position: on a
+symmetric limit cycle the wrong column is the right shape at the wrong phase,
+which looks entirely plausible.
+
+`serve.py --with-figures` stages matplotlib and its **eleven** dependencies —
+12 wheels, 13.09 MB on disk — with the closure resolved transitively from
+`pyodide-lock.json` rather than hand-typed, in both the server and the worker. It
+gets its **own** presence check, because `stage_runtime` returns as soon as the
+wasm, the lock and a numpy wheel are present and folding matplotlib into that
+test would silently skip it on an already-staged directory.
+
+**The constraint that justified the deferral was then verified rather than
+assumed.** A cold boot of `index.html` with all 13 MB staged still pulls
+**9.01 MB** — the recorded figure, unchanged — with **zero** matplotlib bytes on
+it. The page's own resource timeline shows four files; the worker's shows the
+runtime, numpy and the wheel and nothing else.
+
+Three costs are reported separately, because they differ by an order of magnitude
+and one number would misprice all three. Measured in the browser: **0.52 s** to
+fetch and install (once per worker), **1.24 s** to import, **0.58 s** to draw, for
+a six-panel two-replicate figure at 179 KB. The 0.52 s is a **local** fetch of
+~10 MB and is not a network measurement. Natively the import is 0.42 s on a warm
+font cache and the *first ever* call took 3.88 s building it — which is why the
+browser's import is 3x the native repeat: Pyodide has no persistent disk, so
+every session pays it.
+
+And the figure was **looked at**, not exit-code checked, twice — once natively and
+once rendered in the browser. The test that guards it counts ink rather than
+structure, because the failure this project actually shipped was a valid PNG with
+correct axes and no data at all: every structural property held and only the ink
+was missing. The thresholds sit in a measured gap — rendering one panel four ways
+gives blue/red pixel counts of `2412/3271` (both drawn), `0/3457` (a run that
+recorded nothing), `3845/0` (no limit) and `0/0` (neither). **The empty cases are
+not merely small; they are zero.**
+
+### 9d. What the browser found that a test could have
+
+`tests/test_web_assets.py` — 68 tests, **2.2 s**, no browser — exists because
+every bug above was found by opening one, which is the expensive way to find any
+of them. It compiles the Python that `worker.js` embeds in a JS template literal,
+checks every `pyCall` has a matching `def`, and runs each preset briefly.
+
+That first check earned itself immediately. Writing the comment explaining the
+`JsNull` fix, the word `null` was wrapped in **backticks** — inside a JS template
+literal, which ended the string and broke the entire worker with a syntax error
+pointing at a line nowhere near the cause. The page hung on *"starting Python in a
+background thread …"* with nothing in the console, because the failure killed the
+module script before it could log anything. A test that `compile()`s the embedded
+block finds it in 0.02 s.
+
+All six mutations bite the intended test and nothing else, and one test was
+**wrong and the model was right**: a flat floor of "at least 100 recorded points"
+failed `adaptive_dynamics` at 57, because its trait-substitution sequence is a
+jump process with 57 events in the whole run and at `record_every = 1` it is
+already keeping everything that exists. A floor on the point count is a claim
+about the model; what a preset can be held to is a claim about the *thinning*,
+which is the only part it chooses. A second was wrong in the other direction:
+comparing the presets to `available()` passed alone and failed in the suite,
+because other test modules register deliberately-broken teeth models into the
+same global registry.
+
+### 9e. Suite
+
+**844 passed, 11 skipped in 254.76 s** at `-n 6`, against a same-session baseline
+of **776 passed in 407.13 s** with the new module ignored. The suite is
+*faster* with 68 more tests in it, so — by this project's own rule, now on its
+fourth repetition — **the totals are not attributable to the test set** and no
+regression is visible. Three runs this session read `407 / 342 / 255 s`, a
+monotone drift larger than anything being measured. What is attributable is the
+new module's standalone cost: **2.2 s**.
 
 And one thing the plan raises that correctly needed **no** action: the WebGL
 trap. The default answer stayed no. Nothing here was tempted, because the drawing

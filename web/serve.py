@@ -94,12 +94,72 @@ def build_wheel() -> Path:
 
 
 def _numpy_wheel_name(lock: Path) -> str:
+    return _wheel_closure(lock, ["numpy"])["numpy"]
+
+
+def _wheel_closure(lock: Path, roots: list[str]) -> dict[str, str]:
+    """``{package: wheel file name}`` for ``roots`` and everything they depend on.
+
+    Resolved transitively from the lock rather than hand-typed. matplotlib pulls
+    in eleven other packages here, and a hand-written list is a list that goes
+    stale against the next Pyodide release without anything saying so — the wheel
+    simply fails to import at the moment somebody presses the button.
+    """
     data = json.loads(lock.read_text(encoding="utf-8"))
     packages = data.get("packages", data)
-    entry = packages.get("numpy")
-    if entry is None:
-        raise SystemExit(f"no numpy entry in {lock}")
-    return entry["file_name"]
+    resolved: dict[str, str] = {}
+    stack = list(roots)
+    while stack:
+        name = stack.pop()
+        if name in resolved:
+            continue
+        entry = packages.get(name)
+        if entry is None:
+            raise SystemExit(f"no {name!r} entry in {lock}")
+        resolved[name] = entry["file_name"]
+        stack.extend(entry.get("depends", []))
+    return resolved
+
+
+def stage_figure_packages(source: Path | None, download: bool) -> None:
+    """Stage matplotlib and its dependencies, for the on-demand figure export.
+
+    **Its own presence check, deliberately.** ``stage_runtime`` returns as soon as
+    the wasm, the lock and a numpy wheel are there; folding matplotlib into that
+    test would mean an already-staged vendor directory silently skips it, and the
+    failure then surfaces as a confusing error at the moment a reader clicks
+    "export".
+
+    These bytes are staged but **not fetched by the page unless asked for**. That
+    is the whole point of the deferral: matplotlib multiplies the gzipped download
+    2.1x, from 8.7 MB to 18.4 MB, to buy static PNGs — so it belongs behind an
+    explicit action rather than on the path a reader takes to see anything.
+    """
+    lock = VENDOR / "pyodide-lock.json"
+    if not lock.exists():
+        raise SystemExit(f"stage the runtime before the figure packages: {lock} is missing")
+    wanted = _wheel_closure(lock, ["matplotlib"])
+    missing = {n: f for n, f in wanted.items() if not (VENDOR / f).exists()}
+    if not missing:
+        print(f"figure packages already staged ({len(wanted)} wheels)")
+        return
+
+    print(f"staging matplotlib and its dependencies ({len(missing)} wheels) ...")
+    for name, file_name in sorted(missing.items()):
+        if source is not None:
+            src = source / file_name
+            if not src.exists():
+                raise SystemExit(f"{src} is missing; is that a full Pyodide distribution?")
+            shutil.copy2(src, VENDOR / file_name)
+            print(f"  {name}: {file_name}")
+        elif download:
+            _fetch(f"{CDN}/{file_name}", VENDOR / file_name)
+        else:
+            raise SystemExit(
+                f"{file_name} is not in {VENDOR}. Pass --pyodide-src <dir> or --download."
+            )
+    staged = sum((VENDOR / f).stat().st_size for f in wanted.values())
+    print(f"  {len(wanted)} wheels, {staged / 1e6:.2f} MB on disk (not fetched unless asked for)")
 
 
 def stage_runtime(source: Path | None, download: bool) -> None:
@@ -183,6 +243,55 @@ def write_expectations() -> None:
         ),
         encoding="utf-8",
     )
+
+
+def measure_presets() -> None:
+    """Run every preset in ``web/presets.json`` to termination and price it.
+
+    The model picker lets a reader run any of the fourteen registered models, and
+    each needs a step budget. There is no shared constant to derive one from: the
+    demo page's ``470 events per time unit per unit of Omega`` is a *repressilator*
+    measurement, and reusing it elsewhere would be this project's recorded mistake
+    of carrying a number away from the estimator that produced it.
+
+    So the budget is measured, once, here — and the failure it prevents is the
+    specific one the demo page was caught by: a run that stops early leaves the
+    deterministic limit alone on the right of the frame, which reads as perfect
+    agreement rather than as absence.
+
+    This writes nothing. It prints, and the numbers are pasted into
+    ``presets.json`` with the date, because a measurement that silently rewrites
+    its own input has no record of having changed.
+    """
+    from sandbox.web import bridge
+
+    presets = json.loads((WEB / "presets.json").read_text(encoding="utf-8"))["presets"]
+    cap = 4_000_000
+    print(f"pricing {len(presets)} presets (cap {cap:,} steps each) ...\n", flush=True)
+    print(f"  {'model':22s} {'steps':>10s} {'recorded':>9s} {'seconds':>8s}  terminated")
+    for name, preset in presets.items():
+        spec = {
+            "model": name,
+            "params": preset["params"],
+            "replicates": 1,
+            "seed": preset.get("seed", 0),
+            "max_steps": cap,
+            "record_every": 1,
+        }
+        started = time.perf_counter()
+        try:
+            run = bridge.Run("price", bridge.experiment_from_spec(spec))
+            while not run.finished:
+                run.advance(20000)
+            status = run.status()
+            steps = status["steps"][0]
+            elapsed = time.perf_counter() - started
+            print(
+                f"  {name:22s} {steps:>10,} {status['recorded'][0]:>9,} "
+                f"{elapsed:>8.2f}  {status['terminal'][0]}"
+            )
+        except Exception as exc:  # a preset that cannot run is the point of running this
+            print(f"  {name:22s} {'FAILED':>10s} {'':>9s} {'':>8s}  {type(exc).__name__}: {exc}")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -299,10 +408,29 @@ def main() -> None:
         help="directory holding a Pyodide distribution to copy from",
     )
     parser.add_argument("--download", action="store_true", help="fetch the runtime from the CDN")
+    parser.add_argument(
+        "--with-figures",
+        action="store_true",
+        help=(
+            "also stage matplotlib for the on-demand figure export. Staged, not "
+            "bundled: nothing fetches these until a reader presses the button"
+        ),
+    )
     parser.add_argument("--no-build", action="store_true", help="skip rebuilding the wheel")
+    parser.add_argument(
+        "--measure-presets",
+        action="store_true",
+        help="price every model-picker preset to termination and exit (does not serve)",
+    )
     args = parser.parse_args()
 
+    if args.measure_presets:
+        measure_presets()
+        return
+
     stage_runtime(args.pyodide_src, args.download)
+    if args.with_figures:
+        stage_figure_packages(args.pyodide_src, args.download)
     if args.no_build:
         wheels = sorted(DIST.glob("*.whl"))
         print(f"reusing {wheels[0].name if wheels else '(no wheel!)'}")

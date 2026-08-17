@@ -78,6 +78,27 @@
 </section>
 
 <section>
+  <h2>5. Does stop actually stop?</h2>
+  <p>
+    The stop path was written in 4a and read correctly, and it was never once
+    clicked. Reading it again turned up a window in which it did nothing: a page
+    holds a run id before anything is stepping it, so a cancel arriving then had
+    no loop to set a flag on, and the reply saying so was thrown away.
+  </p>
+  <p>
+    Three cases below. What is checked is <strong>correctness</strong> — did it
+    stop, is the run honestly described afterwards, does the worker survive — and
+    deliberately <em>not</em> how long the cancel took to land. A cancel lands at
+    the stepping loop's yield, which is precisely where a hidden tab hands the
+    worker back to a throttled scheduler, so a latency figure taken here would be
+    a number about tab visibility wearing the costume of a number about the
+    protocol.
+  </p>
+  <p><button id="run-stop" disabled>check the stop path</button></p>
+  <div id="stopcheck"></div>
+</section>
+
+<section>
   <h2>Log</h2>
   <pre id="log"></pre>
 </section>
@@ -500,6 +521,128 @@ chunkButton.addEventListener("click", async () => {
 });
 
 // -------------------------------------------------------------------------
+// 5. The stop path
+//
+// Not a browser-vs-native comparison, so the specs are not in conformance.json:
+// cancelling is a property of the worker's message loop and has no native
+// counterpart to disagree with. They are derived from the specs already there
+// rather than invented, so no new configuration has to be justified.
+// -------------------------------------------------------------------------
+const stopButton2 = document.getElementById("run-stop");
+stopButton2.disabled = false;
+stopButton2.addEventListener("click", async () => {
+  stopButton2.disabled = true;
+  const target = document.getElementById("stopcheck");
+  target.innerHTML = "";
+
+  // Long by construction: t_max = 1000 against a 60 000-event budget, so it
+  // cannot finish on its own and anything that ends it, ended it.
+  const longSpec = conformance.responsiveness.spec;
+  const results = {};
+
+  function report(title, ok, lines, detail) {
+    results[title] = { passed: ok, ...detail };
+    target.append(card(title, ok ? "PASS" : "FAIL", ok ? "good" : "bad", lines));
+    say(`${ok ? "PASS" : "FAIL"} — ${title}`);
+  }
+
+  // (a) Cancel while the loop is running.
+  say("stop check (a): cancelling mid-run ...");
+  {
+    const created = await client.send("create", longSpec);
+    let ack = null;
+    const final = await client.send(
+      "run",
+      { run_id: created.run_id, n_steps: longSpec.max_steps, chunk: 500, every_ms: 30 },
+      () => {
+        if (!ack) ack = client.send("cancel", { run_id: created.run_id });
+      }
+    );
+    const when = (await ack).when;
+    const steps = Math.max(...final.steps);
+    const ok =
+      final.cancelled === true &&
+      when === "running" &&
+      steps > 0 &&
+      steps < longSpec.max_steps &&
+      final.terminal.every((t) => !t) &&
+      final.finished === false;
+    report("(a) a cancel during the run stops it, part-way", ok, [
+      `The run was asked to take ${longSpec.max_steps.toLocaleString()} events and took ` +
+        `<strong>${steps.toLocaleString()}</strong> before stopping, reaching t = ` +
+        `${(final.t[0] ?? 0).toFixed(2)} of ${longSpec.params.t_max}.`,
+      `<code>cancelled=${final.cancelled}</code>, <code>when=${when}</code>, ` +
+        `<code>terminal=${JSON.stringify(final.terminal)}</code>, ` +
+        `<code>finished=${final.finished}</code>.`,
+      "<em>terminal stays false, which is the point: a stopped run must not be " +
+        "describable as one that reached its horizon, or the picture reads as " +
+        "agreement out to the right-hand edge of the frame.</em>",
+    ], { steps, when, t: final.t[0], terminal: final.terminal, cancelled: final.cancelled });
+    await client.send("close", { run_id: created.run_id });
+  }
+
+  // (b) Cancel before the stepping loop exists — the window that was broken.
+  say("stop check (b): cancelling before the loop starts ...");
+  {
+    const created = await client.send("create", longSpec);
+    const ack = await client.send("cancel", { run_id: created.run_id });
+    const final = await client.send("run", {
+      run_id: created.run_id,
+      n_steps: longSpec.max_steps,
+      chunk: 500,
+      every_ms: 30,
+    });
+    const steps = Math.max(...final.steps);
+    const ok =
+      ack.cancelling === true &&
+      ack.when === "before-first-step" &&
+      final.cancelled === true &&
+      final.stepped === 0 &&
+      steps === 0 &&
+      final.terminal.every((t) => !t);
+    report("(b) a cancel arriving before the first step is not dropped", ok, [
+      `The cancel was sent between <code>create</code> and <code>run</code> — the ` +
+        `window a page spends integrating the deterministic limit. It was ` +
+        `acknowledged as <code>${ack.when}</code>, and the run then took ` +
+        `<strong>${steps}</strong> events.`,
+      "<em>This is the case that was broken. The worker replied " +
+        "<code>cancelling: false</code>, the page ignored the field, disabled its " +
+        "stop button, and the run went to completion with nothing able to stop it.</em>",
+    ], { ack_when: ack.when, steps, stepped: final.stepped, cancelled: final.cancelled });
+    await client.send("close", { run_id: created.run_id });
+  }
+
+  // (c) The worker survives, and the cancel does not leak into the next run.
+  say("stop check (c): running again afterwards ...");
+  {
+    const spec = { ...conformance.specs[0].spec, replicates: 3 };
+    const created = await client.send("create", spec);
+    const final = await client.send("run", {
+      run_id: created.run_id,
+      n_steps: spec.max_steps,
+      chunk: 500,
+      every_ms: 30,
+    });
+    const ok =
+      final.cancelled === false && final.finished === true && final.terminal.every(Boolean);
+    report("(c) the worker survives, and a later run is unaffected", ok, [
+      `A fresh <code>${spec.model}</code> run after two cancelled ones: ` +
+        `<code>finished=${final.finished}</code>, ` +
+        `<code>terminal=${JSON.stringify(final.terminal)}</code>, ` +
+        `<code>cancelled=${final.cancelled}</code>, ` +
+        `${final.steps.join(" / ")} generations to fixation.`,
+      "<em>Two things at once: the worker was not wedged by the cancels, and the " +
+        "remembered cancel from (b) did not leak onto a different run.</em>",
+    ], { finished: final.finished, terminal: final.terminal, steps: final.steps });
+    await client.send("close", { run_id: created.run_id });
+  }
+
+  window._stopResults = results;
+  stopButton2.disabled = false;
+  say("stop check done.");
+});
+
+// -------------------------------------------------------------------------
 // Autorun: ?autorun=<name> runs everything and posts the results back.
 //
 // This exists so the page can be opened in a REAL, visible browser window. Every
@@ -530,6 +673,15 @@ if (autorun) {
       }
     }, 500);
   });
+  document.getElementById("run-stop").click();
+  await new Promise((resolve) => {
+    const poll = setInterval(() => {
+      if (!document.getElementById("run-stop").disabled) {
+        clearInterval(poll);
+        resolve();
+      }
+    }, 500);
+  });
 
   await fetch(`/results/${autorun}`, {
     method: "POST",
@@ -545,6 +697,7 @@ if (autorun) {
         boot_window: boot.window,
         responsiveness: document.getElementById("responsiveness").innerText,
         chunking: document.getElementById("chunking").innerText,
+        stop_path: window._stopResults,
         log: document.getElementById("log").textContent,
       },
       null,

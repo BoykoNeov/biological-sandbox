@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every model in the registry — Biological Sandbox</title>
+<link rel="stylesheet" href="./style.css">
+<style>
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  textarea { width: 100%; min-height: 12rem; font-family: inherit; font-size: 0.85rem;
+             background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+             border-radius: 4px; padding: 0.6rem; }
+  table.params { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.params td { padding: 0.15rem 0.5rem 0.15rem 0; vertical-align: top;
+                    border-bottom: 1px solid #21262d; }
+  table.params td.k { white-space: nowrap; opacity: 0.8; }
+  table.params td.req { color: #f0883e; }
+  .caps { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0; }
+  .cap { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase;
+         padding: 0.1rem 0.45rem; border-radius: 3px; border: 1px solid #30363d; }
+  .cap.on  { color: #7ee787; border-color: #2ea043; }
+  .cap.off { color: #6e7681; }
+  .legend label { margin-right: 0.9rem; white-space: nowrap; font-size: 0.82rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Every model in the registry, in the browser</h1>
+  <p class="lede">
+    The demo page runs one model. This one runs <strong>all fourteen</strong>, and it
+    does not know anything about any of them: the list, the capabilities and the
+    parameter fields below are all asked for at run time, from the same registry the
+    test suite uses. Adding a model to the project adds it here, with no change to
+    this page.
+  </p>
+  <p class="lede">
+    <strong>Nothing on this page is asserted anywhere.</strong> It is a way to look at
+    the models, not a way to check them. What is checked is checked natively, against
+    a tolerance derived from the statistics of the measurement — see
+    <a href="./index.html">the demo</a> for what a real verdict looks like, and why one
+    of these models refuses to produce one.
+  </p>
+  <dl id="build" class="readout"></dl>
+</header>
+
+<section>
+  <h2>1. Pick a model</h2>
+  <div class="controls">
+    <label>model
+      <select id="model" style="min-width: 16rem"></select>
+    </label>
+    <label>replicates <input id="replicates" type="number" min="1" max="24" style="width: 5rem"></label>
+    <label>seed <input id="seed" type="number" style="width: 6rem"></label>
+    <label>step budget <input id="max_steps" type="number" style="width: 9rem"></label>
+    <label>record every <input id="record_every" type="number" min="1" style="width: 6rem"></label>
+    <button id="run" disabled>run</button>
+    <button id="stop" disabled>stop</button>
+  </div>
+  <div class="caps" id="caps"></div>
+  <p class="muted" id="preset-note"></p>
+
+  <div class="grid">
+    <div>
+      <h3>parameters</h3>
+      <p class="muted">
+        Plain JSON, because that is what a spec is — the project's
+        <code>Experiment</code> named by a string and carrying a dict. Edit it and run.
+      </p>
+      <textarea id="params" spellcheck="false"></textarea>
+      <p><button id="reset-params">reset to the starting point</button></p>
+    </div>
+    <div>
+      <h3>what this model accepts</h3>
+      <p class="muted">
+        Read out of the registered parameter class itself, so it cannot drift from
+        what the model actually takes. A field with no default is one you
+        <em>must</em> supply.
+      </p>
+      <table class="params" id="defaults"></table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>2. Watch it run</h2>
+  <canvas id="trace" style="width: 100%; height: 300px;"></canvas>
+  <div class="legend" id="legend"></div>
+  <div id="field-block" hidden>
+    <h3>the field</h3>
+    <p class="muted">
+      This model carries a 2-D field, so there is a picture as well as a trace. The
+      colour range is printed beside it: an image drawn with a silently autoscaled
+      range makes a claim about <em>shape</em> while hiding one about
+      <em>magnitude</em>, and a pattern collapsing to nothing looks identical to one
+      at full strength if the scale follows it down.
+    </p>
+    <div class="controls">
+      <label>field <select id="field-name"></select></label>
+      <label>colours <select id="cmap"></select></label>
+    </div>
+    <canvas id="field" style="width: 320px; height: 320px; image-rendering: pixelated;"></canvas>
+    <canvas id="field-scale" style="width: 320px; height: 14px;"></canvas>
+    <dl id="field-readout" class="readout"></dl>
+  </div>
+  <dl id="progress" class="readout"></dl>
+  <p>
+    <button id="export" disabled>export this run as a figure</button>
+    <span class="muted" id="export-note"></span>
+  </p>
+  <div id="export-out"></div>
+</section>
+
+<section>
+  <h2>3. The check, where there is one</h2>
+  <p>
+    Six of the fourteen have a closed-form prediction the ValidationSuite can compare a
+    run against. The rest do not, and the button says so rather than going quiet — a
+    model whose limit is a cycle has no single number for an ensemble mean to match,
+    and that is a fact about the model, not a gap in the page.
+  </p>
+  <p><button id="run-validate" disabled>run the check for this model</button></p>
+  <div id="validation"></div>
+</section>
+
+<section>
+  <h2>Log</h2>
+  <pre id="log"></pre>
+</section>
+
+<script type="module">
+import { WorkerClient, fmt } from "./client.js";
+import { TraceChart, FieldView, seriesColors } from "./render.js";
+
+const logEl = document.getElementById("log");
+const say = (line) => {
+  logEl.textContent += line + "\n";
+  console.log("[models] " + line);
+};
+const $ = (id) => document.getElementById(id);
+
+function defList(target, rows) {
+  const el = $(target);
+  el.innerHTML = "";
+  for (const [key, value, cls] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (cls) dd.className = cls;
+    el.append(dt, dd);
+  }
+}
+
+const client = new WorkerClient("./worker.js");
+say("starting Python in a background thread ...");
+// The preset file is fetched alongside the boot rather than after it: it is a
+// static file on the same server and the boot is seconds of WebAssembly.
+const presetPromise = fetch("./presets.json").then((r) => r.json());
+const build = await client.send("boot");
+const registry = await client.send("describe");
+const presetFile = await presetPromise;
+
+defList("build", [
+  ["running", `Python ${build.python} · NumPy ${build.numpy} · Pyodide ${build.pyodide}`],
+  ["package", `biological-sandbox ${build.sandbox} · wheel ${build.wheel_sha256.slice(0, 12)}…`],
+  ["registry", `${registry.models.length} models, ${registry.colormaps.length} colormaps`],
+  ["ready in", `${fmt(build.timings.total_s)} s`],
+]);
+say(`ready. ${registry.models.length} models registered.`);
+
+const PRESETS = presetFile.presets;
+const CAPABILITIES = [
+  ["validatable", "has a closed-form check"],
+  ["deterministic_limit", "has an ODE limit"],
+  ["terminable", "stops itself"],
+  ["fields", "carries a 2-D field"],
+  ["params_from_json", "params from JSON"],
+];
+
+// -------------------------------------------------------------------------
+// The model list. Ordered by the registry, not by this page: a page that keeps
+// its own ordering keeps its own idea of what exists.
+// -------------------------------------------------------------------------
+const modelSelect = $("model");
+for (const info of registry.models) {
+  const option = document.createElement("option");
+  option.value = info.name;
+  const preset = PRESETS[info.name];
+  option.textContent = preset ? `${info.name} — ${preset.title.split("—")[1]?.trim() ?? preset.title}` : info.name;
+  modelSelect.append(option);
+}
+
+// A model in the registry with no preset would still be selectable and would still
+// run, on its registered defaults -- but it would have no measured step budget, so
+// it is called out rather than quietly given someone else's number.
+const missing = registry.models.filter((m) => !PRESETS[m.name]).map((m) => m.name);
+if (missing.length) {
+  say(`no starting point recorded for: ${missing.join(", ")} — using registered defaults`);
+}
+
+const cmapSelect = $("cmap");
+for (const name of registry.colormaps) {
+  const option = document.createElement("option");
+  option.value = option.textContent = name;
+  if (name === "ember") option.selected = true;
+  cmapSelect.append(option);
+}
+
+// -------------------------------------------------------------------------
+// Selecting a model
+// -------------------------------------------------------------------------
+let current = null; // {info, preset, defaults}
+
+async function selectModel(name) {
+  const info = registry.models.find((m) => m.name === name);
+  const preset = PRESETS[name] ?? null;
+  let defaults = null;
+  if (info.params_from_json) {
+    try {
+      defaults = await client.send("defaults", { model: name });
+    } catch (error) {
+      say(`could not read defaults for ${name}: ${error.message}`);
+    }
+  }
+  current = { info, preset, defaults };
+
+  // The glyph, not just the colour. Five badges differing only in hue read as five
+  // capabilities at a glance, which is the "a figure carries a claim" failure in
+  // miniature: the reader takes the list as what the model HAS.
+  $("caps").innerHTML = CAPABILITIES.map(
+    ([key, label]) =>
+      `<span class="cap ${info[key] ? "on" : "off"}">${info[key] ? "✓" : "✕"} ${label}</span>`
+  ).join("");
+
+  const table = $("defaults");
+  table.innerHTML = "";
+  const required = [];
+  for (const [key, value] of Object.entries(defaults ?? {})) {
+    const row = table.insertRow();
+    row.insertCell().outerHTML = `<td class="k">${key}</td>`;
+    if (value === null) {
+      required.push(key);
+      row.insertCell().outerHTML = `<td class="req">you must supply this</td>`;
+    } else {
+      row.insertCell().textContent = JSON.stringify(value);
+    }
+  }
+  if (!defaults) {
+    table.insertRow().insertCell().textContent =
+      "this model is registered without a params type, so its parameters cannot be " +
+      "built from JSON and it cannot be driven from here";
+  }
+
+  $("preset-note").innerHTML = preset
+    ? `Starting point from <code>${preset.source}</code>. The step budget is measured, ` +
+      `not guessed: one replicate of this preset took ` +
+      `<strong>${preset.measured_steps.toLocaleString()}</strong> steps to finish ` +
+      `(${preset.measured_seconds_native} s natively), and the budget below is set above that. ` +
+      (preset.note ? `<br><strong>Note:</strong> ${preset.note}` : "") +
+      (required.length
+        ? `<br>Required fields with no default: <code>${required.join(", ")}</code>.`
+        : "")
+    : "No recorded starting point for this model — the parameters below are its own " +
+      "registered defaults, and the step budget is a guess rather than a measurement. " +
+      "Watch the “reached the end” row.";
+
+  resetParams();
+  $("replicates").value = preset?.replicates ?? 1;
+  $("seed").value = preset?.seed ?? 0;
+  $("max_steps").value = preset?.max_steps ?? 10000;
+  $("record_every").value = preset?.record_every ?? 1;
+  // Enabled either way. A model with no closed-form check still has something to
+  // say -- the bridge resolves successfully with a *reason*, and that refusal is
+  // the interesting output rather than a gap to grey out.
+  $("run-validate").disabled = false;
+  $("run-validate").textContent = info.validatable
+    ? "run the check for this model"
+    : "this model has no closed-form check — press to see why";
+  $("run").disabled = !defaults;
+  $("field-block").hidden = !info.fields;
+  chart.reset({ keys: [], xMax: 1 });
+  chart.draw();
+  $("legend").innerHTML = "";
+  defList("progress", []);
+  $("validation").innerHTML = "";
+}
+
+function resetParams() {
+  const source = current.preset?.params ?? current.defaults ?? {};
+  $("params").value = JSON.stringify(source, null, 2);
+}
+$("reset-params").addEventListener("click", resetParams);
+modelSelect.addEventListener("change", () => selectModel(modelSelect.value));
+
+// -------------------------------------------------------------------------
+// The chart, and the field
+// -------------------------------------------------------------------------
+const chart = new TraceChart($("trace"), { xLabel: "time", yLabel: "observable" });
+const fieldView = new FieldView($("field"), $("field-scale"));
+addEventListener("resize", () => chart.draw());
+
+function buildLegend(keys) {
+  const colors = seriesColors();
+  $("legend").innerHTML = keys
+    .map(
+      (key, i) =>
+        `<label><input type="checkbox" data-key="${key}" checked>` +
+        `<i class="swatch" style="background:${colors[i % colors.length]}"></i>${key}</label>`
+    )
+    .join("");
+  for (const box of $("legend").querySelectorAll("input")) {
+    box.addEventListener("change", () => {
+      chart.toggle(box.dataset.key, box.checked);
+      chart.draw();
+    });
+  }
+}
+
+// -------------------------------------------------------------------------
+// Running
+// -------------------------------------------------------------------------
+const runButton = $("run");
+const stopButton = $("stop");
+let liveRun = null;
+let stopRequested = false;
+
+function readSpec() {
+  let params;
+  try {
+    params = JSON.parse($("params").value);
+  } catch (error) {
+    throw new Error(`the parameters are not valid JSON: ${error.message}`);
+  }
+  const spec = {
+    model: modelSelect.value,
+    params,
+    replicates: Number($("replicates").value),
+    seed: Number($("seed").value),
+    max_steps: Number($("max_steps").value),
+    record_every: Number($("record_every").value),
+  };
+  if (current.info.deterministic_limit && current.preset?.limit) {
+    spec.limit = current.preset.limit;
+  }
+  return spec;
+}
+
+// The whole run lives in a try/finally so the controls always come back. Without
+// it, ANY failure -- a model refusing its parameters, a field that cannot be drawn
+// -- left the run button disabled forever with no message, which is a page that
+// looks like it is still working and is not. That happened here, on the first
+// model with a field.
+runButton.addEventListener("click", async () => {
+  runButton.disabled = true;
+  stopButton.disabled = false;
+  stopRequested = false;
+  $("run-validate").disabled = true;
+  try {
+    await doRun();
+  } catch (error) {
+    say(`the run stopped with an error: ${error.message}`);
+    defList("progress", [["the run stopped with an error", error.message, "bad"]]);
+  } finally {
+    liveRun = null;
+    runButton.disabled = false;
+    stopButton.disabled = true;
+    $("run-validate").disabled = false;
+  }
+});
+
+async function doRun() {
+  let spec;
+  try {
+    spec = readSpec();
+  } catch (error) {
+    say(error.message);
+    defList("progress", [["could not run", error.message, "bad"]]);
+    return;
+  }
+
+  if (lastRun) {
+    await client.send("close", { run_id: lastRun.run_id });
+    lastRun = null;
+    exportButton.disabled = true;
+  }
+
+  let created;
+  try {
+    created = await client.send("create", spec);
+  } catch (error) {
+    // A params dataclass raising is a legitimate answer, not a crash: the models
+    // refuse invalid combinations rather than running them, and this page's whole
+    // point is that you can type an invalid combination.
+    say(`${spec.model} refused these parameters: ${error.message}`);
+    defList("progress", [["the model refused", error.message, "bad"]]);
+    return;
+  }
+  liveRun = created.run_id;
+  if (stopRequested) await client.send("cancel", { run_id: liveRun });
+
+  const keys = created.observable_keys;
+  chart.reset({ keys, xMax: 1 });
+  buildLegend(keys);
+
+  // The horizon the chart is drawn across. Taken from the limit block when there
+  // is one, so the trace and the ODE share an axis; otherwise left to grow with
+  // the data, because most models spell their horizon differently and guessing a
+  // params key would work for the models this page was written against and fail
+  // silently on the next one.
+  let limit = null;
+  if (spec.limit) {
+    say(`${spec.model}: integrating the deterministic limit ...`);
+    try {
+      limit = await client.send("limit", spec);
+      if (limit.available) {
+        chart.reset({ keys, xMax: limit.t_max });
+        chart.setLimit(limit);
+      } else {
+        say(`no limit drawn: ${limit.reason}`);
+      }
+    } catch (error) {
+      say(`the limit could not be integrated: ${error.message}`);
+    }
+  }
+
+  // Everything drained, kept so the replicates can be compared with each other
+  // afterwards. Bounded by max_steps / record_every, which is why record_every is
+  // a control on this page rather than a constant.
+  const raw = Array.from({ length: spec.replicates }, () => ({ t: [], series: {} }));
+  // Only the fields this page can actually draw. The FieldModel protocol does not
+  // say TWO-dimensional and trait_branching takes it at its word -- its field is
+  // the 161-bin trait grid, shape (161,) -- so a page going by the capability flag
+  // alone offers a picture and then puts an exception where the picture was going
+  // to be. Which one it is is said out loud rather than quietly omitted.
+  const shapes = created.field_shapes ?? {};
+  const fieldNames = (created.fields ?? []).filter((f) => (shapes[f] ?? []).length === 2);
+  const notDrawable = (created.fields ?? []).filter((f) => (shapes[f] ?? []).length !== 2);
+  $("field-block").hidden = fieldNames.length === 0 && notDrawable.length === 0;
+  $("field").hidden = fieldNames.length === 0;
+  if (notDrawable.length) {
+    defList("field-readout", [
+      [
+        "not drawn here",
+        `${notDrawable.map((f) => `${f} ${JSON.stringify(shapes[f])}`).join(", ")} — this ` +
+          "page draws 2-D fields as images, and these are not 2-D. The model does " +
+          "report them; they are on its trace instead.",
+        "warn",
+      ],
+    ]);
+  }
+  if (fieldNames.length) {
+    $("field-name").innerHTML = fieldNames.map((f) => `<option>${f}</option>`).join("");
+    const strip = await client.send("colormap_strip", { cmap: cmapSelect.value, width: 256 });
+    fieldView.putScale(strip.rgba, strip);
+  }
+
+  say(`${spec.model}: running (up to ${spec.max_steps.toLocaleString()} steps) ...`);
+  const started = performance.now();
+  const final = await client.send(
+    "run",
+    { run_id: created.run_id, n_steps: spec.max_steps, chunk: 2000, every_ms: 60 },
+    async (progress) => {
+      progress.data.replicates.forEach((part, i) => {
+        chart.append(i, part);
+        raw[i].t.push(...part.t);
+        for (const [key, values] of Object.entries(part.series)) {
+          (raw[i].series[key] ??= []).push(...values);
+        }
+      });
+      if (!spec.limit) chart.xMax = Math.max(chart.xMax, ...progress.status.t.map((v) => v ?? 0));
+      chart.draw();
+      defList("progress", [
+        ["steps so far", progress.status.steps.map((n) => n.toLocaleString()).join(" / ")],
+        ["simulated time", progress.status.t.map((v) => (v ?? 0).toFixed(3)).join(" / ")],
+        ["elapsed", `${((performance.now() - started) / 1000).toFixed(1)} s`],
+      ]);
+    }
+  );
+  chart.draw();
+
+  // The field is drawn before the report but must not be able to suppress it: a
+  // picture that fails to render is not a reason to withhold the numbers saying
+  // what the run did.
+  if (fieldNames.length) {
+    try {
+      await drawField(created.run_id);
+    } catch (error) {
+      say(`the field could not be drawn: ${error.message}`);
+      defList("field-readout", [["the field could not be drawn", error.message, "bad"]]);
+    }
+  }
+
+  report(spec, final, raw, started);
+
+  // Kept open rather than closed, so a figure can be exported OF THIS RUN. The
+  // alternative -- re-running the spec at export time -- would render a different
+  // run than the one on screen, which for a stochastic model is a different
+  // picture with the same caption. The previous run is closed when the next one
+  // starts, so at most one finished run is held.
+  lastRun = { run_id: created.run_id, spec, limit };
+  if (figures.available) {
+    exportButton.disabled = false;
+    exportNote.textContent = figures.ready
+      ? "matplotlib is already loaded in this tab"
+      : "the first export fetches matplotlib — the download the bundle does not carry";
+  }
+  say(`${spec.model}: ${final.cancelled ? "stopped" : "done"}.`);
+}
+
+// -------------------------------------------------------------------------
+// Exporting a figure
+// -------------------------------------------------------------------------
+const exportButton = $("export");
+const exportNote = $("export-note");
+let lastRun = null;
+
+const figures = await client.send("figure_available");
+exportNote.textContent = figures.available
+  ? "run something first; the figure is of that run"
+  : "unavailable — " + (figures.reason || "matplotlib is not staged on this server");
+
+exportButton.addEventListener("click", async () => {
+  if (!lastRun) return;
+  exportButton.disabled = true;
+  exportNote.textContent = figures.ready
+    ? "rendering ..."
+    : "fetching matplotlib (this is the download the bundle does not carry) ...";
+  try {
+    const figure = await client.send("figure", {
+      run_id: lastRun.run_id,
+      limit: lastRun.limit,
+      title:
+        `${lastRun.spec.model} — ${lastRun.spec.replicates} replicate(s), ` +
+        `seed ${lastRun.spec.seed}`,
+    });
+    figures.ready = true;
+
+    const url = URL.createObjectURL(new Blob([figure.rgba], { type: "image/png" }));
+    const out = $("export-out");
+    out.innerHTML = "";
+    const image = new Image();
+    image.src = url;
+    image.style.maxWidth = "100%";
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${lastRun.spec.model}-seed-${lastRun.spec.seed}.png`;
+    link.textContent = "save this PNG";
+    out.append(image, document.createElement("br"), link);
+
+    // Three numbers, not one. They differ by an order of magnitude and a single
+    // "export cost" would misprice whichever one the reader cared about.
+    exportNote.textContent =
+      `${(figure.bytes / 1024).toFixed(0)} KB · ` +
+      (figure.loaded_now
+        ? `${(figure.load_ms / 1000).toFixed(2)} s to fetch and install matplotlib (once per tab), `
+        : "matplotlib already loaded, ") +
+      `${fmt(figure.import_seconds)} s to import, ${fmt(figure.render_seconds)} s to draw · ` +
+      (figure.limit_drawn_for.length
+        ? `the limit is drawn on ${figure.limit_drawn_for.length} of ${figure.observables.length} panels`
+        : "no limit drawn on any panel");
+    say(`figure exported: ${figure.bytes} bytes.`);
+  } catch (error) {
+    exportNote.textContent = "could not render: " + error.message;
+    say(`figure export failed: ${error.message}`);
+  }
+  exportButton.disabled = false;
+});
+
+stopButton.addEventListener("click", async () => {
+  stopRequested = true;
+  stopButton.disabled = true;
+  say("stop requested ...");
+  if (liveRun) {
+    const ack = await client.send("cancel", { run_id: liveRun });
+    say(`stop acknowledged (${ack.when}).`);
+  }
+});
+
+async function drawField(runId) {
+  const image = await client.send("field", {
+    run_id: runId,
+    field: $("field-name").value,
+    cmap: cmapSelect.value,
+  });
+  fieldView.put(image.rgba, image);
+  const strip = await client.send("colormap_strip", { cmap: cmapSelect.value, width: 256 });
+  fieldView.putScale(strip.rgba, strip);
+  defList("field-readout", [
+    ["field", `${image.field}, ${image.width}×${image.height}, at t = ${fmt(image.t)}`],
+    ["colour range", `${fmt(image.vmin)} … ${fmt(image.vmax)} — autoscaled to this frame`],
+  ]);
+}
+
+// -------------------------------------------------------------------------
+// What actually happened
+// -------------------------------------------------------------------------
+function report(spec, final, raw, started) {
+  const reached = final.terminal.every(Boolean);
+  const rows = [
+    ["model", `${spec.model}, ${spec.replicates} replicate(s), seed ${spec.seed}`],
+    ["steps", final.steps.map((n) => n.toLocaleString()).join(" / ")],
+    ["simulated time", final.t.map((v) => (v ?? 0).toFixed(4)).join(" / ")],
+  ];
+
+  rows.push([
+    "reached the end",
+    reached
+      ? "yes — every replicate stopped because the model said it was finished"
+      : final.cancelled
+        ? "no — you stopped it. Everything drawn is real; the frame just ends early."
+        : `NO — the ${spec.max_steps.toLocaleString()}-step budget ran out first. ` +
+          "Anything drawn past this point belongs to the limit alone, and the gap " +
+          "reads as agreement when it is absence. Raise the budget.",
+    reached ? "ok" : final.cancelled ? "warn" : "bad",
+  ]);
+
+  // Are the replicates actually different runs? Measured from what was drawn,
+  // rather than looked up in a table of which models are deterministic -- a table
+  // is maintained state that can drift, and this cannot. It matters because N
+  // bit-identical curves drawn on top of each other look exactly like one curve,
+  // and a legend claiming N of them is then a figure making a false claim.
+  if (spec.replicates > 1) {
+    const same = [];
+    for (let i = 1; i < raw.length; i++) same.push(identical(raw[0], raw[i]));
+    const allSame = same.length > 0 && same.every(Boolean);
+    rows.push([
+      "are the replicates different?",
+      allSame
+        ? `no — all ${spec.replicates} are bit-identical. This model draws no randomness, ` +
+          "so you are looking at one curve drawn " + spec.replicates + " times, not at a " +
+          "spread. Set replicates to 1; nothing is lost."
+        : `yes — replicate 0 differs from ${same.filter((s) => !s).length} of ` +
+          `${same.length} others, so the spread on the chart is real.`,
+      allSame ? "warn" : "ok",
+    ]);
+  }
+
+  rows.push(["stepping", `${fmt(final.compute_seconds)} s of processor time`]);
+  rows.push(["wall clock", `${((performance.now() - started) / 1000).toFixed(1)} s`]);
+  defList("progress", rows);
+}
+
+/** Exact equality of two drained replicates, series by series. */
+function identical(a, b) {
+  if (a.t.length !== b.t.length) return false;
+  for (let i = 0; i < a.t.length; i++) if (a.t[i] !== b.t[i]) return false;
+  const keys = Object.keys(a.series);
+  if (keys.length !== Object.keys(b.series).length) return false;
+  for (const key of keys) {
+    const x = a.series[key];
+    const y = b.series[key];
+    if (!y || x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  }
+  return true;
+}
+
+// -------------------------------------------------------------------------
+// The check
+// -------------------------------------------------------------------------
+$("run-validate").addEventListener("click", async () => {
+  const button = $("run-validate");
+  button.disabled = true;
+  const target = $("validation");
+  target.innerHTML = "";
+  let spec;
+  try {
+    spec = readSpec();
+  } catch (error) {
+    target.textContent = error.message;
+    button.disabled = false;
+    return;
+  }
+  say(`validating ${spec.model} ...`);
+  try {
+    const report = await client.send("validate", spec);
+    const verdict = report.validatable ? (report.passed ? "PASS" : "FAIL") : "NO CHECK TO RUN";
+    const card = document.createElement("div");
+    card.className = "card " + (report.validatable ? (report.passed ? "good" : "bad") : "note");
+    card.innerHTML =
+      `<h3><span class="badge">${verdict}</span> ${spec.model}</h3>` +
+      (report.validatable
+        ? report.checks
+            .map(
+              (check) =>
+                `<p><code>${check.line}</code></p>` +
+                `<p class="muted">predicted ${fmt(check.predicted)}, measured ` +
+                `${fmt(check.measured)} over ${check.n} runs; the tolerance is ` +
+                `${check.z} standard errors of that mean — ${fmt(check.tolerance)} — so it ` +
+                `tightens as more runs are added rather than staying put.</p>`
+            )
+            .join("")
+        : `<p class="muted">${report.reason}</p>`);
+    target.append(card);
+    say(`${spec.model}: ${verdict}`);
+  } catch (error) {
+    // analytic_predictions raising IS an answer here. Past a Hopf bifurcation, on
+    // a complex eigenvalue pair, on a growth rate too near zero to measure, these
+    // models refuse rather than return a number that would still look green.
+    const card = document.createElement("div");
+    card.className = "card note";
+    card.innerHTML =
+      `<h3><span class="badge">REFUSED</span> ${spec.model}</h3>` +
+      `<p class="muted">The model declined to predict anything for these parameters, ` +
+      `which is a designed answer rather than a failure:</p><p><code>${error.message}</code></p>`;
+    target.append(card);
+    say(`${spec.model}: refused — ${error.message}`);
+  }
+  button.disabled = false;
+});
+
+await selectModel(modelSelect.value);
+</script>
+</body>
+</html>

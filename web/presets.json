@@ -1,0 +1,320 @@
+{
+  "note": "One runnable starting point per registered model, for web/models.html. These are STARTING POINTS, not validated configurations: nothing on that page is asserted anywhere, and what is asserted is checked natively with a derived tolerance. Every params block is copied from code that already runs it -- a demo or a test -- and `source` says which, so no configuration here was invented. `max_steps` and `record_every` ARE measured: web/serve.py --measure-presets runs each preset to termination and reports the cost, and the numbers below came from that. A budget below what a model needs stops the replicates early, which draws a picture that reads as agreement rather than as absence, so it is sized rather than guessed.",
+  "measured_on": "one run of `uv run python web/serve.py --measure-presets` on 2026-08-17; the machine swings, so treat these as the right order of magnitude and read the page's own `reached the end` row rather than trusting them",
+  "presets": {
+    "wright_fisher": {
+      "title": "Wright-Fisher \u2014 genetic drift to fixation",
+      "source": "web/conformance.json (the browser-vs-native conformance spec)",
+      "params": {
+        "N": 200,
+        "p0": 0.3,
+        "s": 0.0
+      },
+      "replicates": 6,
+      "seed": 11,
+      "measured_steps": 187,
+      "measured_seconds_native": 0.0,
+      "max_steps": 20000,
+      "record_every": 1
+    },
+    "birth_death": {
+      "title": "Birth-death \u2014 the simplest exact closed form",
+      "source": "tests/test_birth_death.py",
+      "params": {
+        "k": 2.0,
+        "gamma": 1.0,
+        "Omega": 30.0,
+        "t_max": 5.0,
+        "c0": 0.5
+      },
+      "replicates": 6,
+      "seed": 11,
+      "limit": {
+        "t_max": 5.0,
+        "dt": 0.002
+      },
+      "measured_steps": 560,
+      "measured_seconds_native": 0.01,
+      "max_steps": 5000,
+      "record_every": 1
+    },
+    "isomerization": {
+      "title": "Isomerization \u2014 A <-> B at fixed total",
+      "source": "tests/test_isomerization.py",
+      "params": {
+        "k1": 1.0,
+        "k2": 1.0,
+        "Omega": 10.0,
+        "t_max": 5.0,
+        "c_tot": 2.0,
+        "cA0": 0.0
+      },
+      "replicates": 6,
+      "seed": 11,
+      "limit": {
+        "t_max": 5.0,
+        "dt": 0.002
+      },
+      "measured_steps": 116,
+      "measured_seconds_native": 0.01,
+      "max_steps": 2000,
+      "record_every": 1
+    },
+    "repressilator": {
+      "title": "Repressilator \u2014 three genes repressing in a cycle",
+      "source": "web/index.html (the demo page's own settings)",
+      "params": {
+        "alpha": 216.0,
+        "alpha0": 0.216,
+        "n_hill": 2.0,
+        "beta": 1.0,
+        "Omega": 30.0,
+        "t_max": 15.0
+      },
+      "replicates": 4,
+      "seed": 11,
+      "limit": {
+        "t_max": 15.0,
+        "dt": 0.005
+      },
+      "measured_steps": 161877,
+      "measured_seconds_native": 8.48,
+      "max_steps": 300000,
+      "record_every": 100
+    },
+    "glv_stochastic": {
+      "title": "Generalized Lotka-Volterra, with demographic noise",
+      "source": "src/sandbox/demos/glv_stochastic.py (BASE, Omega, T_MAX)",
+      "params": {
+        "Omega": 100.0,
+        "t_max": 20.0,
+        "r": [
+          1.0,
+          0.8,
+          1.2
+        ],
+        "A": [
+          [
+            -1.0,
+            -0.3,
+            -0.2
+          ],
+          [
+            -0.4,
+            -1.0,
+            -0.1
+          ],
+          [
+            -0.2,
+            -0.5,
+            -1.0
+          ]
+        ],
+        "x_init": [
+          0.2,
+          0.2,
+          0.2
+        ]
+      },
+      "replicates": 4,
+      "seed": 11,
+      "measured_steps": 7524,
+      "measured_seconds_native": 1.15,
+      "max_steps": 20000,
+      "record_every": 5,
+      "note": "No limit is drawn for this model, and the reason is structural rather than a missing setting. It reports five observables -- three species plus total_biomass and n_survivors -- against a three-component ODE, and the bridge overlays the limit column by column and in order, so it refuses anything that does not correspond one-to-one. Any model reporting DERIVED observables alongside its state has the same problem. The refusal is correct: silently drawing the ODE's three columns against the first three observables would happen to be right here and would be wrong for a model that ordered them differently."
+    },
+    "hh_stochastic": {
+      "title": "Hodgkin-Huxley with a finite number of ion channels",
+      "source": "src/sandbox/demos/hodgkin_huxley.py (_NOISY_CURRENT = 5.0)",
+      "params": {
+        "n_channels": 10000.0,
+        "i_ext": 5.0,
+        "t_max": 40.0,
+        "dt": 0.01,
+        "v0": -65.0
+      },
+      "replicates": 4,
+      "seed": 11,
+      "measured_steps": 4000,
+      "measured_seconds_native": 1.93,
+      "max_steps": 5000,
+      "record_every": 2
+    },
+    "hodgkin_huxley": {
+      "title": "Hodgkin-Huxley \u2014 the deterministic action potential",
+      "source": "src/sandbox/demos/hodgkin_huxley.py act 4",
+      "params": {
+        "i_ext": 20.0,
+        "v0": -65.0,
+        "t_max": 30.0,
+        "dt": 0.01
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 3000,
+      "measured_seconds_native": 1.0,
+      "max_steps": 4000,
+      "record_every": 1
+    },
+    "hh_voltage_clamp": {
+      "title": "Voltage clamp \u2014 the exact-exponential anchor",
+      "source": "tests/test_hh_voltage_clamp.py",
+      "params": {
+        "v_clamp": -20.0,
+        "v_hold": -70.0,
+        "t_max": 3.0,
+        "dt": 0.01
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 300,
+      "measured_seconds_native": 0.01,
+      "max_steps": 1000,
+      "record_every": 1
+    },
+    "gray_scott": {
+      "title": "Gray-Scott \u2014 a reaction-diffusion field",
+      "source": "src/sandbox/demos/gray_scott.py (_FEED, _KILL, _GROWING_EPS, mode_j = 7)",
+      "params": {
+        "feed": 0.074,
+        "kill": 0.062,
+        "n": 64,
+        "mode_j": 7,
+        "eps": 1.35e-05,
+        "t_max": 133.6,
+        "dt": 0.2,
+        "initial": "mode"
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 668,
+      "measured_seconds_native": 0.64,
+      "max_steps": 1000,
+      "record_every": 1
+    },
+    "glv": {
+      "title": "Generalized Lotka-Volterra \u2014 the deterministic community",
+      "source": "the model's own registered defaults",
+      "params": {
+        "r": [
+          1.0,
+          0.8,
+          1.2
+        ],
+        "A": [
+          [
+            -1.0,
+            -0.3,
+            -0.2
+          ],
+          [
+            -0.4,
+            -1.0,
+            -0.1
+          ],
+          [
+            -0.2,
+            -0.5,
+            -1.0
+          ]
+        ],
+        "x_init": [
+          0.1,
+          0.1,
+          0.1
+        ],
+        "initial": "state",
+        "eps": 0.001,
+        "t_max": 20.0,
+        "dt": 0.01
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 2000,
+      "measured_seconds_native": 0.06,
+      "max_steps": 3000,
+      "record_every": 1
+    },
+    "lotka_volterra": {
+      "title": "Lotka-Volterra \u2014 the closed orbit",
+      "source": "the model's own registered defaults",
+      "params": {
+        "alpha": 1.1,
+        "beta": 0.4,
+        "gamma": 0.4,
+        "delta": 0.1,
+        "amp": 0.4,
+        "t_max": 100.0,
+        "dt": 0.01
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 10000,
+      "measured_seconds_native": 0.24,
+      "max_steps": 12000,
+      "record_every": 5
+    },
+    "daisyworld": {
+      "title": "Daisyworld \u2014 regulation that is closed-form",
+      "source": "the model's own registered defaults",
+      "params": {
+        "luminosity": 1.0,
+        "gamma": 0.3,
+        "initial": "state",
+        "a_init": [
+          0.01,
+          0.01
+        ],
+        "t_max": 100.0,
+        "dt": 0.01
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 10000,
+      "measured_seconds_native": 0.94,
+      "max_steps": 12000,
+      "record_every": 5
+    },
+    "adaptive_dynamics": {
+      "title": "Adaptive dynamics \u2014 the trait-substitution sequence",
+      "source": "src/sandbox/demos/adaptive_dynamics.py (the registered defaults)",
+      "params": {
+        "sigma_m": 0.05,
+        "sigma_a": 0.7,
+        "sigma_k": 1.0,
+        "r_growth": 1.0,
+        "k0": 1.0,
+        "mutation_rate": 1.0,
+        "x_init": 2.0,
+        "u_target": 0.5
+      },
+      "replicates": 6,
+      "seed": 11,
+      "measured_steps": 57,
+      "measured_seconds_native": 0.01,
+      "max_steps": 5000,
+      "record_every": 1
+    },
+    "trait_branching": {
+      "title": "Trait branching \u2014 a gLV on a trait grid",
+      "source": "src/sandbox/demos/adaptive_dynamics.py, with a SHORTENED horizon",
+      "note": "t_max is 20 000 here against the model's own default of 200 000. The default is what the validated branch-time measurement needs; twenty thousand is what fits in a browser page. Branching at sigma_a = 0.7 happens well before this, but a shortened horizon is a different run from the validated one and the page must not be read as reproducing it.",
+      "params": {
+        "sigma_a": 0.7,
+        "sigma_k": 1.0,
+        "n_grid": 161,
+        "half_width": 4.0,
+        "dt": 0.5,
+        "t_max": 20000.0,
+        "initial": "branching"
+      },
+      "replicates": 1,
+      "seed": 11,
+      "measured_steps": 40000,
+      "measured_seconds_native": 6.17,
+      "max_steps": 50000,
+      "record_every": 20
+    }
+  }
+}

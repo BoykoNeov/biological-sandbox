@@ -61,6 +61,7 @@ __all__ = [
     "describe_models",
     "deterministic_limit",
     "experiment_from_spec",
+    "figure_png",
     "fingerprint_spec",
     "validate_spec",
 ]
@@ -228,6 +229,29 @@ class Run:
             return ()
         return tuple(self.model.fields(self.runners[0].state).keys())
 
+    def field_shapes(self) -> dict[str, list[int]]:
+        """``{name: shape}`` for every declared field, drawable or not.
+
+        The ``FieldModel`` protocol does not say *two*-dimensional, and one model
+        takes it at its word: ``trait_branching`` declares a field that is the
+        161-bin trait grid, shape ``(161,)``. :meth:`field_rgba` renders an image
+        and needs two dimensions, so it refuses that one — correctly, but a
+        front-end reading only the capability flag offers a picture it cannot
+        produce and then shows an error where the picture was going to be.
+
+        Reporting the shape lets the caller say which of the two it is *before*
+        drawing, rather than discovering it from an exception. Filtering the 1-D
+        field out of ``field_names`` was the alternative and is worse: the model
+        does declare it, and a front-end that silently omits a model's own output
+        is lying in the more expensive direction.
+        """
+        if not isinstance(self.model, FieldModel):
+            return {}
+        return {
+            name: list(np.asarray(value).shape)
+            for name, value in self.model.fields(self.runners[0].state).items()
+        }
+
     def field_rgba(
         self,
         name: str,
@@ -283,6 +307,7 @@ class Session:
         self._runs[run_id] = run
         status = run.status()
         status["fields"] = list(run.field_names())
+        status["field_shapes"] = run.field_shapes()
         return status
 
     def get(self, run_id: str) -> Run:
@@ -561,6 +586,125 @@ def colormap_strip(
         "vmin": lo,
         "vmax": hi,
     }
+
+
+def figure_png(
+    run_id: str,
+    observables: list[str] | tuple[str, ...] | None = None,
+    *,
+    limit: dict[str, Any] | None = None,
+    title: str | None = None,
+    dpi: int = 110,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """A static PNG of a finished run, rendered on demand.
+
+    **On demand is the whole design.** matplotlib and its eleven dependencies
+    multiply the front-end's gzipped download 2.1x — 8.7 MB to 18.4 MB — to buy
+    static PNGs, so they are staged beside the runtime but never fetched until
+    someone asks for a figure. The measured cost of the ask is reported in the
+    metadata rather than described, because "it loads quickly" is not a number.
+
+    **The drawing is not done here.** It calls
+    :func:`~sandbox.viz.backends.matplotlib_backend.plot_replicates`, which is the
+    project's own teaching figure and is exercised by the suite. A second plotting
+    implementation on this side would be a lookalike free to drift from the one
+    every recorded figure was made with, and the front-end's job is to show the
+    project's quantities rather than new ones.
+
+    ``limit`` is the dict :func:`deterministic_limit` returns. Its columns are
+    matched to the trace **by observable name**, never by position: on a symmetric
+    limit cycle the wrong column is the right shape at the wrong phase, which looks
+    entirely plausible in a figure and is wrong.
+    """
+    # Timed in two halves, because they are two different questions. The import is
+    # the on-demand cost the whole deferral is about and is paid once per session;
+    # the draw is what a *second* figure costs. One number would be dominated by
+    # the first and would misprice both.
+    #
+    # AGG before pyplot, and not as a precaution: a Web Worker has no DOM, and
+    # Pyodide's default matplotlib backend reaches for one. Verified by rendering
+    # in the worker rather than assumed.
+    import io as _io
+
+    import_started = time.perf_counter()
+    import matplotlib
+
+    matplotlib.use("AGG")
+    import matplotlib.pyplot as plt
+
+    from sandbox.viz.backends.matplotlib_backend import plot_replicates
+
+    import_seconds = time.perf_counter() - import_started
+
+    started = time.perf_counter()
+    run = SESSION.get(run_id)
+    keys = list(observables) if observables else list(run.observable_keys)
+    unknown = [k for k in keys if k not in run.observable_keys]
+    if unknown:
+        raise KeyError(
+            f"unknown observable(s) {unknown} for model {run.experiment.model!r}; "
+            f"it reports {list(run.observable_keys)}"
+        )
+    if not keys:
+        raise ValueError("nothing to draw: the run reports no observables")
+
+    trajectories = [runner.trajectory for runner in run.runners]
+    limit_series = (limit or {}).get("series") if (limit or {}).get("available") else None
+
+    figure, axes = plt.subplots(
+        len(keys), 1, figsize=(8, 2.4 * len(keys) + 0.6), sharex=True, squeeze=False
+    )
+    drawn_limits = []
+    for ax, key in zip(axes[:, 0], keys, strict=True):
+        deterministic = None
+        if limit_series and key in limit_series:
+            deterministic = (limit["t"], limit_series[key])
+            drawn_limits.append(key)
+        plot_replicates(
+            trajectories,
+            key,
+            deterministic=deterministic,
+            ax=ax,
+            alpha=0.35 if len(trajectories) > 2 else 0.8,
+        )
+        # plot_replicates labels and legends every Axes it is given, which is right
+        # for a single panel and clutter on a shared-x stack of six: the same word
+        # under every panel and the same legend inside every one. Stripped here
+        # rather than by adding a flag to the shared helper, which every other
+        # caller would then have to care about.
+        ax.set_xlabel("")
+        if ax is not axes[0, 0] and ax.get_legend() is not None:
+            ax.get_legend().remove()
+    axes[-1, 0].set_xlabel("time")
+    if title:
+        figure.suptitle(title)
+    figure.tight_layout()
+
+    buffer = _io.BytesIO()
+    figure.savefig(buffer, format="png", dpi=dpi)
+    plt.close(figure)
+    data = buffer.getvalue()
+
+    meta = {
+        "run_id": run_id,
+        "model": run.experiment.model,
+        "observables": keys,
+        "replicates": len(trajectories),
+        "bytes": len(data),
+        "dpi": dpi,
+        "import_seconds": import_seconds,
+        "render_seconds": time.perf_counter() - started,
+        # Which panels actually got a limit drawn on them. A figure whose caption
+        # says "with the deterministic limit" over a panel that has none is this
+        # project's recurring failure, and the honest fix is to report what was
+        # drawn rather than what was requested.
+        "limit_drawn_for": drawn_limits,
+        "recorded": [len(t.times) for t in trajectories],
+        "terminal": [runner.terminal for runner in run.runners],
+    }
+    # As a uint8 array rather than bytes, so it leaves the WASM heap through the
+    # same transfer path the field pixels already use.
+    return np.frombuffer(data, dtype=np.uint8), meta
 
 
 def fingerprint_spec(spec: dict[str, Any]) -> dict[str, Any]:

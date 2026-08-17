@@ -150,12 +150,25 @@ def web_fingerprint(spec_json):
 def web_discrepancy(spec_json):
     return _dumps(bridge.discrepancy_to_limit(json.loads(spec_json)))
 
-def web_field(run_id, field, cmap, vmin, vmax, replicate):
-    run = bridge.SESSION.get(run_id)
+def web_field(arg_json):
+    # JSON in, like every other entry point here, and for a reason that cost a
+    # debugging session: passing the arguments positionally sent a JS null across
+    # for an absent vmin/vmax, and Pyodide maps null to a JsNull SINGLETON, not to
+    # None. So "vmin is None" was false and float(vmin) raised. The autoscale
+    # branch was its only caller and no page used autoscaling -- draw.html
+    # deliberately fixes its range -- so the bug sat behind an untaken path.
+    # Through JSON there is no JS value left to mistranslate.
+    #
+    # NOTE: this whole block is a JS template literal. A backtick in here ends the
+    # string and breaks the entire worker with a syntax error nowhere near it,
+    # which is exactly how this comment was written the first time.
+    arg = json.loads(arg_json)
+    run = bridge.SESSION.get(arg["run_id"])
+    vmin, vmax = arg.get("vmin"), arg.get("vmax")
     rgba, meta = run.field_rgba(
-        field,
-        replicate=int(replicate),
-        cmap=cmap,
+        arg["field"],
+        replicate=int(arg.get("replicate") or 0),
+        cmap=arg.get("cmap") or "ember",
         vmin=None if vmin is None else float(vmin),
         vmax=None if vmax is None else float(vmax),
     )
@@ -163,6 +176,19 @@ def web_field(run_id, field, cmap, vmin, vmax, replicate):
     # them straight out of the WASM heap and transfers the buffer.
     globals()["_field_rgba"] = rgba
     return _dumps(meta)
+
+def web_figure(arg_json):
+    arg = json.loads(arg_json)
+    png, meta = bridge.figure_png(
+        arg["run_id"],
+        arg.get("observables"),
+        limit=arg.get("limit"),
+        title=arg.get("title"),
+        dpi=int(arg.get("dpi") or 110),
+    )
+    globals()["_field_rgba"] = png
+    return _dumps(meta)
+
 
 def web_colormap_strip(name, width, height):
     rgba, meta = bridge.colormap_strip(name, int(width), int(height))
@@ -200,6 +226,39 @@ function grabFieldBytes() {
 }
 
 // --------------------------------------------------------------------------
+// The on-demand figure packages
+//
+// Staged beside the runtime but never fetched unless asked for. That split is the
+// whole reason matplotlib is not simply in the bundle: it multiplies the gzipped
+// download 2.1x -- 8.7 MB to 18.4 MB -- to buy static PNGs, so it belongs behind
+// an explicit action rather than on the path a reader takes to see anything.
+// --------------------------------------------------------------------------
+
+let matplotlibReady = false;
+
+async function figureSupport() {
+  if (matplotlibReady) return { ready: true, available: true };
+  try {
+    const lock = await (await fetch("./vendor/pyodide/pyodide-lock.json")).json();
+    const packages = lock.packages || lock;
+    const entry = packages.matplotlib;
+    if (!entry) return { ready: false, available: false, reason: "matplotlib is not in the lock" };
+    const response = await fetch("./vendor/pyodide/" + entry.file_name, { method: "HEAD" });
+    return response.ok
+      ? { ready: false, available: true, wheel: entry.file_name }
+      : {
+          ready: false,
+          available: false,
+          reason:
+            "matplotlib is in the lock but its wheel is not staged. Restart the " +
+            "server with: python web/serve.py --with-figures --pyodide-src <dir>",
+        };
+  } catch (error) {
+    return { ready: false, available: false, reason: String(error) };
+  }
+}
+
+// --------------------------------------------------------------------------
 // The stepping loop, driven from in here
 //
 // The main thread could drive `advance` one message at a time, and the crossing
@@ -210,11 +269,29 @@ function grabFieldBytes() {
 
 const running = new Map(); // run_id -> {cancelled}
 
+// A cancel that arrives before the loop exists. The page enables its stop button
+// as soon as it has a run_id, and a page typically does other work with that id
+// first -- the demo integrates the deterministic limit, which is a visible
+// interval -- so a stop clicked in that window used to find no token, reply
+// `cancelling: false`, and be thrown away: the button disabled itself and the run
+// then went to completion with nothing able to stop it. A cancel is a fact about
+// the RUN, not about whichever loop happens to be live, so it is remembered here
+// and applied when the loop starts.
+const cancelledEarly = new Set(); // run_id
+
 async function runLoop(id, arg) {
   const { run_id, chunk = 2000, every_ms = 60, quiet = false } = arg;
   const budget = arg.n_steps == null ? Infinity : Number(arg.n_steps);
-  const token = { cancelled: false };
+  const token = { cancelled: cancelledEarly.delete(run_id) };
   running.set(run_id, token);
+
+  // Cancelled before a single step was taken. Return without advancing rather
+  // than stepping one chunk first: `terminal` stays false and `stepped` is 0,
+  // which is the honest description of a run that was stopped before it began.
+  if (token.cancelled) {
+    running.delete(run_id);
+    return { ...pyCall("web_status", run_id), cancelled: true, stepped: 0 };
+  }
 
   let done = 0;
   let lastPost = 0;
@@ -298,6 +375,7 @@ self.onmessage = async (event) => {
         payload = pyCall("web_status", arg.run_id);
         break;
       case "close":
+        cancelledEarly.delete(arg.run_id);
         payload = pyCall("web_close", arg.run_id);
         break;
       case "limit":
@@ -317,15 +395,7 @@ self.onmessage = async (event) => {
         // single "drawing cost" would hide which half to look at if it ever grew:
         // the numpy colormap, then getting the bytes out of the WASM heap.
         const t0 = now();
-        payload = pyCall(
-          "web_field",
-          arg.run_id,
-          arg.field,
-          arg.cmap || "ember",
-          arg.vmin == null ? null : arg.vmin,
-          arg.vmax == null ? null : arg.vmax,
-          arg.replicate || 0
-        );
+        payload = pyCall("web_field", JSON.stringify(arg));
         const t1 = now();
         const rgba = grabFieldBytes();
         payload.colormap_ms = t1 - t0;
@@ -333,6 +403,38 @@ self.onmessage = async (event) => {
         self.postMessage({ id, payload, rgba }, [rgba.buffer]);
         return;
       }
+      case "figure": {
+        // The one command that loads a package, and the only place in the front
+        // end that does. matplotlib and its eleven dependencies more than double
+        // the download, so they are staged beside the runtime and fetched HERE,
+        // on an explicit action, rather than sitting on the path a reader takes
+        // to see anything. Loaded once per worker; the cost of the first call and
+        // the cost of the rest are reported separately because they differ by an
+        // order of magnitude and one number would misprice both.
+        const t0 = now();
+        let loaded = false;
+        if (!matplotlibReady) {
+          await py.loadPackage("matplotlib");
+          matplotlibReady = true;
+          loaded = true;
+        }
+        const loadMs = now() - t0;
+        payload = pyCall("web_figure", JSON.stringify(arg));
+        payload.load_ms = loadMs;
+        payload.loaded_now = loaded;
+        const png = grabFieldBytes();
+        self.postMessage({ id, payload, rgba: png }, [png.buffer]);
+        return;
+      }
+      case "figure_available":
+        // Asked before the button is offered: the wheels are staged by
+        // `serve.py --with-figures`, and a deployment without them should say so
+        // up front rather than failing at the click. The wheel's file name comes
+        // from the lock, never from a string here -- a hand-typed wheel name is a
+        // name that goes stale against the next Pyodide release with nothing
+        // saying so until somebody presses the button.
+        payload = await figureSupport();
+        break;
       case "colormap_strip": {
         payload = pyCall("web_colormap_strip", arg.cmap || "ember", arg.width || 256, arg.height || 1);
         const strip = grabFieldBytes();
@@ -345,7 +447,16 @@ self.onmessage = async (event) => {
       case "cancel": {
         const token = running.get(arg.run_id);
         if (token) token.cancelled = true;
-        payload = { run_id: arg.run_id, cancelling: Boolean(token) };
+        else cancelledEarly.add(arg.run_id);
+        // `when` says which of the two happened, so a page can report that the
+        // stop landed before the run rather than during it -- and so that a
+        // future caller cannot repeat this one's mistake of reading a falsy
+        // "cancelling" as "the stop worked".
+        payload = {
+          run_id: arg.run_id,
+          cancelling: true,
+          when: token ? "running" : "before-first-step",
+        };
         break;
       }
       default:
