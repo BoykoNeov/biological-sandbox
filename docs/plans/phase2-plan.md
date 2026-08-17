@@ -86,6 +86,15 @@ Schnakenberg or Brusselator model. It is **noted and deferred** — adding a thi
 model to buy back one check is scope creep, and category A above already
 validates the same physics more sharply.
 
+> **Phase 2c note (added when the deferral was taken).** The last clause is wrong.
+> Category A is the growth rate of a mode seeded *by hand*; selection is about the
+> mode that appears when nothing is seeded, and no amount of sharpening one gives the
+> other. Schnakenberg is built, and the claim it carries — the emergent wavenumber
+> follows the **stencil's** fastest mode and not the continuum's, by 13-16 standard
+> errors, on a grid where the two disagree — is one Gray-Scott cannot make.
+> Brusselator remains deferred, and now for a reason that holds: Schnakenberg carries
+> the claim, so a second model buys nothing.
+
 ---
 
 ## Hodgkin-Huxley
@@ -316,7 +325,7 @@ two models stay independent (either could be dropped without stranding the other
 
 ## Explicitly deferred
 
-- Schnakenberg / Brusselator for near-onset wavelength selection.
+- Schnakenberg / Brusselator for near-onset wavelength selection. **Schnakenberg TAKEN in Phase 2c**; Brusselator still deferred.
 - The HH linearized matrix-exponential check (the voltage clamp is sharper).
 - scipy stiff integrators — measured unnecessary (`tau_min = 0.0622 ms`).
 - WebGL / browser Gray-Scott — the HANDOFF fork stays deferred until the Python

@@ -1,6 +1,6 @@
 {
   "note": "One runnable starting point per registered model, for web/models.html. These are STARTING POINTS, not validated configurations: nothing on that page is asserted anywhere, and what is asserted is checked natively with a derived tolerance. Every params block is copied from code that already runs it -- a demo or a test -- and `source` says which, so no configuration here was invented. `max_steps` and `record_every` ARE measured: web/serve.py --measure-presets runs each preset to termination and reports the cost, and the numbers below came from that. A budget below what a model needs stops the replicates early, which draws a picture that reads as agreement rather than as absence, so it is sized rather than guessed.",
-  "measured_on": "one run of `uv run python web/serve.py --measure-presets` on 2026-08-17; the machine swings, so treat these as the right order of magnitude and read the page's own `reached the end` row rather than trusting them",
+  "measured_on": "one run of `uv run python web/serve.py --measure-presets` on 2026-08-17, re-run the same day when the schnakenberg preset was added; the machine swings, so treat these as the right order of magnitude and read the page's own `reached the end` row rather than trusting them",
   "presets": {
     "wright_fisher": {
       "title": "Wright-Fisher \u2014 genetic drift to fixation",
@@ -191,6 +191,29 @@
       "measured_steps": 668,
       "measured_seconds_native": 0.64,
       "max_steps": 1000,
+      "record_every": 1
+    },
+    "schnakenberg": {
+      "title": "Schnakenberg \u2014 the wavelength a pattern chooses",
+      "source": "src/sandbox/demos/schnakenberg.py (_COARSE: the selection configuration)",
+      "params": {
+        "a": 0.05,
+        "b": 1.0,
+        "du": 0.001,
+        "dv": 0.00915573,
+        "n": 112,
+        "length": 8.0,
+        "ndim": 1,
+        "dt": 0.1,
+        "t_max": 300.0,
+        "initial": "noise",
+        "noise": 0.001
+      },
+      "replicates": 3,
+      "seed": 11,
+      "measured_steps": 3000,
+      "measured_seconds_native": 0.74,
+      "max_steps": 3500,
       "record_every": 1
     },
     "glv": {

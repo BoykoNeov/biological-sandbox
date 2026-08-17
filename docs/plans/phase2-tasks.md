@@ -313,10 +313,13 @@ targets — fill them in as each step lands.
 
 ## Explicitly deferred (do NOT do in Phase 2)
 
-- [ ] ~~Schnakenberg / Brusselator~~ — a near-onset wavelength-selection
-      prediction is cleanly available there, but category A above validates the
-      same physics more sharply; adding a third model to buy one check is scope
-      creep.
+- [x] ~~Schnakenberg / Brusselator~~ — **TAKEN in Phase 2c** (Schnakenberg;
+      Brusselator stays deferred). The reasoning here was half wrong: category A
+      validates `lambda(q)`, the growth rate of a mode seeded *by hand*, and
+      wavelength **selection** is a different claim about the mode that appears when
+      nothing is seeded. It is not the same physics more sharply, and Gray-Scott
+      cannot carry it at all — at Pearson's parameters there is no Turing state to
+      select about. See `docs/plans/phase2c-{plan,schnakenberg-measurement}.md`.
 - [ ] ~~HH linearized matrix-exponential check~~ — only valid to `O(eps^2)`, so an
       honest version is a slope-2-in-`eps` check; the voltage clamp is sharper and
       cheaper.

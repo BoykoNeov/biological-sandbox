@@ -28,7 +28,9 @@ near-onset selection argument actually applies here.
 **The prediction uses the DISCRETE Laplacian's eigenvalue**, as Gray-Scott's does,
 and here it decides the *wavelength* rather than only a rate: at about 4.3 cells per
 wavelength the stencil and the continuum disagree by 2.6 modes about which mode is
-fastest, and the emergent pattern followed the stencil in 32 runs out of 32.
+fastest, and the emergent pattern went with the stencil: across the three grids where
+the two answers are 2-3 modes apart, the measured peak matched the continuum's answer
+**0 times in 24 runs** (once in 32, on a fourth grid where the answers are adjacent).
 
 **Three things learned by measuring rather than by reading**
 (`docs/plans/phase2c-schnakenberg-measurement.md`):
@@ -77,8 +79,11 @@ from sandbox.core.registry import register
 MIN_MEASURABLE_RATE = 1e-3
 
 # The pattern's wavenumber is still drifting below this many e-folds of the fastest
-# mode. Swept at lambda* t = 12, 16, 20, 24, 30: at 10.6 cells per wavelength the
-# mean settles by 16 and holds, at 6.4 it is still climbing at 20 and stops by 30.
+# mode. Swept at lambda* t = 12, 16, 20, 24, 30 across grids, and then checked far out:
+# the selected mode is IDENTICAL at 22.7, 45.3 and 113.3 e-folds at both shipped
+# resolutions, so past this threshold the answer is horizon-independent rather than
+# merely slow-moving. (What does keep changing out there is how much power sits in
+# harmonics -- see peak_power_fraction, whose first docstring confused the two.)
 MIN_SELECTION_EFOLDS = 20.0
 
 INITIAL_CONDITIONS = ("mode", "noise")
@@ -443,9 +448,20 @@ def dominant_mode(field: np.ndarray) -> int:
 def peak_power_fraction(field: np.ndarray) -> float:
     """Share of the non-uniform power sitting in the dominant mode.
 
-    Reported because it is the tell for a pattern that has not settled: 0.997-0.999
-    on a resolved grid near onset, and 0.46-0.88 in a long box still carrying
-    defects, which is also where the selected mode stops being reproducible.
+    **Strongly horizon-dependent, and an earlier version of this docstring quoted one
+    horizon's number as if it were the model's.** Measured at three seeds, ``d/d_c =
+    1.2``, over horizons of 22.7, 45.3 and 113.3 e-folds of the fastest mode:
+
+    * 10.6 cells per wavelength: ``0.53-0.90``, then ``0.86-0.97``, then ``0.997-0.999``;
+    * 4.3 cells per wavelength: ``0.45-0.70``, then ``0.39-0.78``, and **frozen there** —
+      the coarse grid never cleans up, because the harmonics it carries have nowhere
+      to go.
+
+    So this is a description of how *sinusoidal* the saturated pattern is, not a
+    settling criterion: at ``1.2 d_c`` the modulation is about 50% of the background,
+    which is not weakly nonlinear, and roughly half the power sits in harmonics until
+    a long horizon drains it. The **selected mode**, by contrast, is identical at all
+    three horizons on both grids, which is what :data:`MIN_SELECTION_EFOLDS` is about.
     """
     power = power_by_mode(field)
     total = power.sum()

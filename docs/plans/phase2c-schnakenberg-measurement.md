@@ -57,7 +57,7 @@ mode" is not a measurement — it is linear theory noting that the only mode tha
 could grow, grew. This project has a name for that: *a threshold nothing can fail
 is not a check.*
 
-Measured at `n = 256`, mode count in the unstable band:
+Measured at `n = 512`, mode count in the unstable band:
 
 | `d/d_c` | `L=1` | `L=2` | `L=4` | `L=8` | `L=16` |
 |---|---|---|---|---|---|
@@ -69,6 +69,15 @@ Measured at `n = 256`, mode count in the unstable band:
 So near onset in a small box the claim **is** vacuous, and the box length is the
 lever that buys it content. `L = 8` at `d/d_c = 1.2` gives 13-17 unstable modes
 depending on resolution, and that is where the rest of the slice sits.
+
+**Correction, made when the shipped test was written from this table.** The row
+above holds `n` fixed, which means a longer box is also a *coarser* one, and §3
+shows the coarseness moves the band on its own — so the table conflates two
+variables. Re-measured at fixed grid **spacing** (`h = 0.03125`, `n` proportional to
+`L`), the `d/d_c = 1.2` counts are **1, 3, 6, 13, 25** for `L = 1, 2, 4, 8, 16`; the
+`L = 8` entry is 13 rather than 12. The qualitative conclusion is unchanged and the
+shipped test asserts the fixed-spacing numbers, since those isolate the box from the
+resolution.
 
 The competing hypotheses were then enumerated in arithmetic, before any simulation:
 the **band centre**, the **lowest unstable mode**, and the fastest mode of the
@@ -142,8 +151,12 @@ the real result appears:
 | 192 | 8.00 | 19-31 | 24 | 24 | 25,24,24,26,25,25,24,24 | 4/8 | (same) |
 | 256 | 10.67 | 19-31 | 24 | 24 | 24,24,24,24,24,23,24,25 | 6/8 | (same) |
 
-The **0/8 column** is the finding. Wherever the two operators disagree about which
-mode is fastest, the emergent pattern never once picks the continuum's answer. That
+The **0/8 column** is the finding, and it needs stating exactly, because the loose
+version ("never once") contradicts the table's own `n = 160` row. Across the four grids
+where the two operators name different integers, the emergent peak equalled the
+continuum's answer **once in 32 runs** — one seed at `n = 160`, the grid where the two
+answers are adjacent — and **0 times in 24** on the three coarser grids, where they are
+2 to 3 modes apart. That
 is Phase 2b's central lesson — the simulation obeys the operator being integrated,
 not the equation on paper — arriving in the **nonlinear** regime, where it was not
 obvious it would survive.
@@ -220,6 +233,50 @@ was considered as a way to make the measured quantity match a continuous
 prediction, and rejected: the pattern really is an integer mode on a periodic box,
 so a sub-mode estimator would report the integer with tiny scatter and dress up the
 quantization rather than remove it.
+
+### 7a. Half of §7 did not survive the shipped step size (s10)
+
+**Everything above §7 was integrated at `0.4 x CFL`, which does not divide `t_max`
+exactly and so is not a step size the model will accept.** Re-taken through the
+shipped code — `dt = 0.1` at `n = 112`, `0.05` at `n = 160`, both about `0.36 x CFL`
+and both dividing `t_max` — two of §7's conclusions change:
+
+| | `n = 112` (R = 8 → 48) | `n = 160` (R = 8 → 48) |
+|---|---|---|
+| mean | 26.25 → 26.42 | 25.00 → 24.81 |
+| gap to continuous maximiser | 0.61 → **2.24 SE** | 0.76 → **0.17 SE** |
+| gap to fastest integer | 1.00 → 2.93 SE | 0.00 → 2.03 SE |
+| margin vs continuum operator | 9.08 → **15.95 SE** | 3.62 → **10.46 SE** |
+| margin vs band centre | 6.39 → **8.89 SE** | 1.11 → **7.26 SE** |
+
+1. **The `n = 160` trap does not reproduce.** At the shipped step size its deviation
+   *falls* to 0.17 SE at R = 48 instead of climbing to 2.75. The mechanism §7
+   describes is real and was worth finding — a fixed mean under a shrinking error bar
+   — but the number belonged to the slice's estimator, not to the model. Sixth
+   instance in this project of a number travelling only with its estimator, and the
+   first where the estimator was *this document's own*.
+2. **The targets no longer disagree.** At the shipped step size the continuous
+   maximiser is the better target on **both** grids (0.17 and 2.24 SE, against 2.03
+   and 2.93 for the best integer). So "the best target flips between grids" was also
+   a step-size artefact. What survives is that no target is exact: `n = 112` carries a
+   real residual of about `+0.32` modes that grows to 2.24 SE by R = 48 and would
+   cross `z = 4` near R ≈ 190.
+3. **What the design got right, and it is now measured rather than assumed.** Margins
+   *grow* with replicates at both grids, roughly as `sqrt(R)`, because they are
+   differences of gaps divided by a shrinking error bar. So more replicates make a
+   discrimination report **stronger**, where they eventually break an equality check.
+   That asymmetry is the whole reason for the design and it is why the conclusion of
+   §7 stands even though half its numbers did not.
+
+**The shipped configuration, and why it is not R = 16.** `n = 112` at `R = 32`,
+`z = 4`, verified at four top-level seed-sets: weakest margin `6.68 SE`, i.e. 1.67x
+of headroom. `R = 16` was **rejected for being seed-lucky** — it clears the
+band-centre competitor by `4.11 SE` on one seed-set of four, 0.11 above the
+threshold. `n = 160` ships as the *contrast* case at `R = 8`, where the report
+correctly **fails**: the prediction agrees better (0.76 SE) and yet the band centre
+cannot be excluded (1.11 SE), at 4/4 seed-sets with a margin never above 2.81. Better
+agreement and weaker discrimination at once, which is the trade-off the coarse grid
+resolves.
 
 ## 8. Supercriticality — the precondition, and a number that is not the exponent
 
@@ -320,13 +377,65 @@ at four parameter points but every dynamical number above is at one of them.
    separation from each competing hypothesis, with the assertion on the
    **discrimination margin**.
 3. Ship the coarse grid for the discrimination (`n = 112`, where the operators
-   differ by 2.6 modes and the continuum is excluded at 16.6 SE) and the resolved
-   grid for the agreement (`n = 256`, settled by `lambda* t = 16`, 0.37-0.62 SE).
-   `n = 160` is the trap and is kept in the tests as a recorded finding, not a
-   config.
-4. Refuse a horizon below `lambda* t = 20` — swept at 12/16/20/24/30, and the
-   number has five points behind it rather than the two it started with.
+   differ by 2.27 modes and the continuum is excluded at 13-16 SE) at `R = 32`, and
+   the `n = 160` grid as the **contrast** case at `R = 8`, where the report correctly
+   fails on the band centre. See §7a for both, and for why `R = 16` was rejected.
+4. Refuse a horizon below `lambda* t = 20` — swept at 12/16/20/24/30, and then
+   checked far out (§13): the selected mode is *identical* at 22.7, 45.3 and 113.3
+   e-folds on both shipped grids, so past the threshold the answer is
+   horizon-independent rather than merely slow-moving.
 5. `dominant_mode` is `nan` before the pattern exists, the way Gray-Scott's
    `growth_rate` is `nan` at `t = 0`; and `dt` must divide `t_max` exactly, which
    Gray-Scott already guards and this slice's own instrument got wrong (an
    `s4` snapshot at `t = 300` was silently missed by a float comparison).
+
+## 13. What the build found that the slice had not
+
+Every item here comes from building the thing, and three of them corrected something
+written above.
+
+**The horizon is settled, and generously.** The threshold was calibrated on a sweep
+of the *mean*; checked instead on the selected mode itself, three seeds pick the
+identical mode at `lambda* t = 22.7, 45.3 and 113.3` on both shipped grids. The
+threshold is not a knife edge.
+
+**A power-fraction number went into a docstring with one horizon behind it.** The
+share of power in the dominant mode was recorded as "0.997-0.999 on a resolved grid",
+which is true only at 113 e-folds. At the shipped 22.7 it reads `0.53-0.90` on the
+fine grid and `0.45-0.70` on the coarse one, and on the coarse grid it then **freezes**
+(`0.39-0.78` at 45 e-folds and unchanged at 113) because the harmonics it carries have
+nowhere to go. At `1.2 d_c` the modulation is ~50% of the background: this is not a
+weakly nonlinear pattern, and roughly half its power is genuinely in harmonics. The
+docstring is corrected, and the distinction it blurred — how *sinusoidal* the pattern
+is, versus whether the *mode* has settled — is now stated in both places.
+
+**Three figure defects, found by looking, as in every phase that shipped one.** The
+selection panel's field plot was a jagged sawtooth captioned as though it were a clean
+pattern; the dispersion panel's "complex pair" curve was listed in the legend and
+invisible on the axes, because at small `j` diffusion barely matters and it hides
+exactly under the continuum curve; and the continuum's rejected prediction sat flush
+against the axis spine, where a refuted claim reads as decoration. All three are fixed
+in the figure rather than in its caption. The 2-D panel was then re-gridded from
+`n = 96` to `n = 128` for the same reason: at 3.6 cells per wavelength the picture
+shows the grid instead of the wavelength — and at `n = 128` both seeds hit the
+predicted mode exactly (25 and 25), where `n = 96` had missed by one.
+
+**Mutation: 20 of 22 killed, and the two real gaps were both "a check nothing can
+fail".** The spectral estimator subtracted the mean *and* zeroed mode 0, so on a
+symmetric field the subtraction cancelled exactly and deleting the zeroing changed
+nothing — two mechanisms where one is testable. And a margin mutated from
+`(gap_competitor - gap_prediction)/SE` to `gap_competitor/SE` survived every test,
+because on the contrast grid both formulas land under `z = 4` and the test only
+asserted that the report fails. Both now have their own assertions. The two remaining
+survivors are provable no-ops: a tie-break in `argmax` that no real spectrum reaches,
+and a population-vs-sample standard deviation, which moves a margin by 1.6% at
+`R = 32` against 67% of headroom.
+
+**Two test fixtures reached for parameter points that lacked the property they
+needed**, which is worth recording because both looked obviously right. A mode past
+the band edge is *not* a mode with an unmeasurably small rate — out there the rate is
+large and negative, and perfectly measurable — so the near-zero-rate refusal is
+reached by moving the *ratio* to onset instead (`1.001 d_c`, rate `2.15e-4`). And
+`a = 0.02, b = 4.0` looks like a wildly unstable state and has `trace = -15.2`;
+trace > 0 needs `(a+b)^3 < b-a`, so both parameters must be small (`a = 0.01,
+b = 0.5` gives `+0.70`).

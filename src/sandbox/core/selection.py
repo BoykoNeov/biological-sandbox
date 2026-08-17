@@ -204,6 +204,11 @@ def selection_report(
         selected anything yet; the default of 20 was swept at 12, 16, 20, 24 and 30.
         Pass ``efolds=None`` to skip the check, which is only appropriate when the
         caller has established settling some other way.
+    sem_floor:
+        Divisor guard only. The **zero**-spread case is refused rather than floored:
+        for a quantized measurement a unanimous ensemble is not a tiny standard error
+        to be regularised, it is a different and stronger claim, and floors there
+        would print an infinite margin as a pass.
     """
     if not competitors:
         raise ValueError(
@@ -247,6 +252,18 @@ def selection_report(
         )
 
     mean, sd, sem = _mean_sd_sem(selected)
+    if sd == 0.0:
+        raise ValueError(
+            f"every one of the {len(selected)} replicates selected mode "
+            f"{selected[0]:g}, so the spread is exactly zero and every margin would "
+            "be reported in units of a zero standard error — an infinite margin is "
+            "not a statistical statement. A unanimous ensemble supports a STRONGER "
+            "and simpler claim than this report makes, so assert that directly: "
+            "every replicate selected mode X, and the alternatives are other "
+            "integers. (Reachable in practice: a small box near onset is unanimous "
+            "at six replicates.) A wider box, or one further from onset, restores a "
+            "distribution to measure."
+        )
     sem_eff = max(sem, sem_floor)
     gap_prediction = abs(mean - predicted_mode)
 

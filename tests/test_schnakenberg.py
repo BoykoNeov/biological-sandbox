@@ -759,7 +759,10 @@ def test_the_band_guard_can_fail(coarse_report) -> None:
     True`` is invisible — another check nothing could fail. Handing the report a band
     that excludes the answer must flip it, and must sink the whole report.
     """
-    wrong = run_selection_with_band(COARSE, replicates=2, band=(1, 3))
+    # Three replicates, not two: at two they both select mode 27 and the report
+    # (rightly) refuses a zero spread instead of reaching the band check. Measured -
+    # the third replicate is the first one that differs.
+    wrong = run_selection_with_band(COARSE, replicates=3, band=(1, 3))
     assert not wrong.all_inside_band
     assert not wrong.passed
     assert coarse_report.all_inside_band  # and the real band still contains them
@@ -869,6 +872,33 @@ def test_selection_report_refuses_a_single_replicate() -> None:
             max_steps=n_steps(params) + 10,
             record_every=n_steps(params),
             efolds=None,
+        )
+
+
+def test_selection_report_refuses_a_unanimous_ensemble() -> None:
+    """A zero spread would print an infinite margin as a pass.
+
+    Reachable, and easily: a small box near onset gives the same mode at every
+    replicate (measured, 6/6 at `L = 2, n = 64` and at `L = 4, n = 128`). With
+    ``sd = 0`` every competitor's margin is a gap divided by zero, and the report
+    would read EXCLUDED at ~1e12 SE — this project's oldest failure mode wearing a
+    statistical costume. A unanimous ensemble is a *stronger* claim than a margin, so
+    it is refused here and belongs in an assertion of its own.
+    """
+    config = {**BASE, "length": 2.0, "n": 64, "dt": 0.02, "t_max": 300.0, "mode_j": 6}
+    params = factory(config)
+    with pytest.raises(ValueError, match="spread is exactly zero"):
+        selection_report(
+            "schnakenberg",
+            config,
+            factory,
+            predicted_mode=fastest_mode(params, continuous=True),
+            competitors={"band centre": 6.0, "lowest unstable": 5.0},
+            band=(5, 7),
+            replicates=4,
+            max_steps=n_steps(params) + 10,
+            record_every=n_steps(params),
+            efolds=dispersion(params, int(fastest_mode(params)))[0] * params.t_max,
         )
 
 

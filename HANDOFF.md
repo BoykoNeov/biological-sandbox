@@ -170,6 +170,10 @@ Add **Gillespie / repressilator** next, because it's where the thread becomes vi
 
 **Hodgkin-Huxley** (single cell → small networks; validate spike shape, refractory period, f–I curve) and **Gray-Scott** (validate pattern wavelength against linear stability analysis; ideal first target for a shader/browser backend). These are the performance ceilings — this is where numba/JAX/WebGL get introduced, guided by real profiling rather than guesswork.
 
+> **Deviation (Phase 2, then completed in Phase 2c).** "Validate pattern wavelength against linear stability analysis" turned out to be *two* claims, and Gray-Scott can carry only one of them. Phase 2 validated `lambda(q)` — the growth rate of a mode seeded by hand — and reframed the wavelength half as unavailable there, because at Pearson's famous parameters Gray-Scott has **no real non-trivial homogeneous steady state**, so those patterns are excitable structures rather than Turing patterns and linear theory sets no wavelength for them. **Phase 2c takes the wavelength half** with Schnakenberg, whose Turing bifurcation is supercritical and whose onset is entirely closed form: seed nothing, and the wavenumber that emerges follows the **stencil's** fastest mode rather than the continuum operator's, by 13-16 standard errors on a grid where the two disagree. It is asserted as a *discrimination* against named alternatives, not as an equality, because the emergent wavenumber is quantized by the box and its ensemble mean matches no single scalar to 4 SE. See `docs/plans/phase2c-{plan,schnakenberg-measurement}.md`.
+>
+> The other half of this line — WebGL/shaders as the performance ceiling — was **measured and declined** in Phase 4: the drawing path is ~6% of a frame, so a shader would buy nothing and would cost a reimplementation of validated numerics in a language no test here can reach.
+
 ### Phase 3+ — Cross gradually into the speculative
 
 See §6. Each step must keep a checkable prediction for as long as one exists, and be explicitly labelled exploratory once one no longer does.

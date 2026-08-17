@@ -32,6 +32,18 @@ measurement.
    by the ValidationSuite within tolerance.** Validation *is* the definition of
    done, and the tolerance is statistical (`z * standard error`), never a
    hardcoded epsilon. Prefer this over inventing new pass/fail logic.
+   **Three tracks exist, and a new one needs a measured reason to exist** — not a
+   preference. `core/validation.py` is a replicate mean against a predicted scalar;
+   `core/convergence.py` is a power law's exponent (the repressilator's limit is a
+   *cycle*, so no scalar exists for a mean to match); `core/selection.py` is a
+   discrimination between named hypotheses (Schnakenberg's emergent wavenumber is
+   *quantized*, so its mean matches no scalar to `z*SE` and the equality check fails
+   as replicates grow — measured, `docs/plans/phase2c-schnakenberg-measurement.md`
+   §7a). All three take the model-specific arithmetic from their **caller** and read
+   only named scalar observables, so non-negotiable #1 holds for them in full.
+   When `analytic_predictions` cannot answer honestly it **raises** — no real state,
+   a complex eigenvalue pair, a rate too near zero, or a quantized quantity with no
+   exact target.
 3. **Reproducibility.** Seed every stochastic run. Derive replicate RNGs with
    `core.rng.spawn_rngs` (`SeedSequence.spawn`) — never `default_rng(seed + i)`.
    Every `Experiment` serializes and re-runs to the same `Result`.
@@ -58,10 +70,23 @@ measurement.
 
 ## Layout
 
-`src/sandbox/core/` protocol + services · `models/` the models ·
+`src/sandbox/core/` protocol + services (three validation tracks:
+`validation.py`, `convergence.py`, `selection.py`) · `models/` the models ·
 `viz/backends/` pluggable plotting · `web/` the browser front-end's Python side ·
 `demos/` runnable examples · `tests/` wraps the ValidationSuite ·
 `docs/plans/` per-phase dev docs · top-level `web/` the JS, HTML and the server.
+
+**A model never imports a service.** Models import `core.{laplacian,ode,rng,registry}`
+and `models.gillespie` — numerics and registration — and nothing from
+`core.{sweep,recorder,validation,convergence,selection}`. The tests and demos wire a
+model's own arithmetic into a track, which is how `repressilator` meets
+`convergence_report` and `schnakenberg` meets `selection_report`.
+
+**Registering a model owes the front-end a preset.** `web/presets.json` needs one
+entry per built-in model and `test_the_presets_cover_every_built_in_model` fails
+otherwise — deliberately, so adding a model is a decision about the picker rather than
+a silent omission from it. Its `max_steps` must come from
+`web/serve.py --measure-presets`, never from another model's cost.
 
 **`src/sandbox/web/bridge.py` is a shared service and non-negotiable #1 applies
 to it in full** — protocol surface only, never inside a concrete state, exactly
@@ -80,6 +105,94 @@ avoid, in a language no test here can reach.
 - **Batch / session end:** update memory + `docs/`, then commit and push.
 
 ## Status
+
+**Phase 2c is built: Schnakenberg, and the wavelength claim Phase 2 deferred.** It is
+**not** a new phase — `HANDOFF.md` §8 says there is no Phase 5 and that inventing one
+is not the next action — it is Phase 2's one explicitly deferred item, taken because
+Phase 2's stated reason for deferring it was half wrong. `lambda(q)` is the growth rate
+of a mode seeded **by hand**; which wavelength appears when you seed **nothing** is a
+different claim, and it is the one HANDOFF §5 actually asked for. Gray-Scott cannot
+carry it at all: at Pearson's parameters there is no Turing state to select about.
+`models/schnakenberg.py`, `core/selection.py`, `demos/schnakenberg.py`,
+`tests/test_schnakenberg.py` (74 tests), and a `web/presets.json` entry. Plan and
+record: `docs/plans/phase2c-{plan,schnakenberg-measurement}.md`. Both deferral notes in
+`docs/plans/phase2-{plan,tasks}.md` are amended in place, so nobody finds "deferred"
+beside a built model.
+
+**Everything about the onset is closed form, and `det J = u*^2` *exactly* is why**:
+`u* = a+b`, `v* = b/(a+b)^2`, so `q_c^2 = u*/sqrt(Du Dv)` and
+`d_c = [u*(1+sqrt(1+f_u))/f_u]^2`. Each is asserted against an independent route — the
+Jacobian against central differences, `d_c` against a bisection (`2e-11`), `q_c`
+against an argmax — never against a recorded literal. The seeded-mode anchor reproduces
+the **stencil's** rate to 8-10 digits **across a sign change**, while the continuum
+`-Dq^2` is 39% off at a growing mode and **184%** at Nyquist; the residual falls as
+`eps^2`, which identifies it as the nonlinear correction and not the operator.
+
+**The design finding, and it is the phase's transferable one: a quantized measurement
+has no exact scalar target, so the claim is a *discrimination*.** A periodic box admits
+only integer modes, so the emergent wavenumber's ensemble mean matches no continuous
+prediction exactly — measured, the deviation **grows** with replicate count (0.61 →
+2.24 SE at R = 8 → 48) because the mean stands still while the error bar shrinks under
+it. So `analytic_predictions` **refuses** the random initial condition (the project's
+first refusal on *statistical* rather than algebraic grounds) and `core/selection.py`
+asserts that the prediction beats each **named alternative** by a margin exceeding
+`z*SE`. Margins *grow* with replicates (continuum 9.1 → 16.0 SE), so more data
+strengthens a discrimination where it eventually breaks an equality — that asymmetry is
+the whole point of the design and it was measured, not assumed. Two non-vacuity guards
+ship with it: every replicate must land inside the unstable band, and the selected mode
+must not track the initial noise (initially-loaded modes scatter across the whole
+spectrum; every run ends within a mode of the same answer).
+
+**The claim only has content where the hypotheses differ, and that is a *coarse*
+grid.** At 4.3 cells per wavelength the stencil and the continuum disagree by 2.27
+modes about which mode is fastest, and across the coarse grids where the two answers are
+2-3 modes apart the emergent peak matched the continuum's **0 times in 24 runs** (once in
+32 including the grid where the answers are adjacent)
+— Phase 2b's lesson arriving in the **nonlinear** regime. At 10.6 cells they agree, the
+prediction fits *better* (0.32 SE), and the discrimination collapses. Ship config
+`n = 112, R = 32, z = 4`, verified at four seed-sets with a weakest margin of 6.68 SE;
+**`R = 16` was rejected for seed-luck** — it clears the band-centre competitor by
+0.11 SE on one seed-set of four.
+
+**A grid can be too coarse to have the claim at all**, and the first design walked into
+it: coarsen and the stencil's fastest mode becomes **Nyquist** (a checkerboard the
+pattern does not match), coarsen once more and the instability **vanishes**, because
+the largest representable `q_eff^2 = 4/h^2` drops below the unstable band. Also
+measured: the box length is the lever that makes selection non-vacuous at all (1, 3, 6,
+13, 25 unstable modes for `L = 1..16` at fixed spacing) — with one unstable mode, "the
+fastest mode won" says only that the only mode which could grow, grew.
+
+**Half of the measurement document did not survive the shipped step size, and the
+estimator that failed was its own.** The slice integrated at `0.4 x CFL`, which the
+model refuses (`dt` must divide `t_max`). Re-taken at the shipped step, the recorded
+"deviation grows with R" trap at `n = 160` **does not reproduce** (0.17 SE at R = 48),
+and the "best target flips between grids" conclusion was the same artefact. The
+mechanism was real and worth finding; the numbers belonged to the instrument. Recorded
+as a correction in place (§7a), not by editing the originals away.
+
+**Three figure defects found by looking, and a fourth caught in a docstring.** A field
+plot that was a jagged sawtooth captioned as a clean pattern; a legend entry for a
+curve invisible on the axes (at small `j` the stencil hides under the continuum); a
+rejected prediction drawn flush against the spine, where a refutation reads as
+decoration. The 2-D panel was re-gridded from `n = 96` to `n = 128` for the same reason
+— at 3.6 cells per wavelength the picture shows the grid, not the wavelength — and at
+`n = 128` both seeds hit the predicted mode exactly where `n = 96` missed by one. And a
+docstring quoted a power fraction of `0.997-0.999` that holds only at 113 e-folds: at
+the shipped 22.7 it is `0.53-0.90`, and on the coarse grid it **freezes** because the
+harmonics have nowhere to go. The selected *mode*, by contrast, is identical at 22.7,
+45.3 and 113.3 e-folds on both grids. **How sinusoidal the pattern is and whether the
+mode has settled are different questions.**
+
+**Mutation: 20/22 red, and both real gaps were "a check nothing can fail".** The
+spectral estimator subtracted the mean *and* zeroed mode 0, so on a symmetric field the
+subtraction cancelled exactly and deleting the zeroing changed nothing — two mechanisms
+where only one is testable. And a margin mutated from `(gap_comp - gap_pred)/SE` to
+`gap_comp/SE` survived everything, because on the contrast grid both formulas land
+under `z = 4`. The remaining two survivors are provable no-ops. **The amplitude
+exponent is deliberately not asserted**: the log-log slope reads `0.4606` and a
+Richardson extrapolation of `amp/sqrt(eps)` is still drifting, so "supercritical,
+consistent with `1/2` with `O(eps)` corrections" is the honest claim and the slope
+number is labelled as not being the exponent.
 
 **Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c), and its three
 recorded deferrals are now built too.** The record with every number is

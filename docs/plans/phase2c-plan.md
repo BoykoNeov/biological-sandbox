@@ -59,7 +59,7 @@ Claim B gets `selection_report`, the way `repressilator` is validated by
 Each `[ ]` is a commit-sized unit; the validation test comes before the
 implementation is correct and must be confirmed able to fail.
 
-1. `[ ]` **`models/schnakenberg.py`, the algebra.** `SchnakenbergParams`
+1. `[x]` **`models/schnakenberg.py`, the algebra.** `SchnakenbergParams`
    (`a, b, du, dv, n, length, ndim, mode_j, eps, noise, initial, t_max, dt`),
    `homogeneous_state`, `reaction_jacobian`, `critical_ratio`,
    `critical_wavenumber`, `dispersion` (stencil, returns rate/eigenvector/is_real),
@@ -67,19 +67,19 @@ implementation is correct and must be confirmed able to fail.
    maximiser — they are different quantities and the measurement needed both).
    Params guards: CFL, `dt` divides `t_max` exactly, `mode_j <= n/2`, `ndim in
    (1, 2)`, `initial` in the allowed set.
-2. `[ ]` **Tests for 1.** Closed forms against central differences, a bisection and
+2. `[x]` **Tests for 1.** Closed forms against central differences, a bisection and
    an argmax; `det J = u*^2` at four `(a, b)`; the two `fastest_mode` routes pinned
    against each other; the band's integer content at the recorded configurations.
-3. `[ ]` **The protocol model.** `initial_state` (two initial conditions),
+3. `[x]` **The protocol model.** `initial_state` (two initial conditions),
    `step` (RK4), `observables`, `is_terminal`, `fields` (1-D **or** 2-D — Phase 4
    already reports `field_shapes` for a non-2-D field, so the front-end needs no
    change), `analytic_predictions` with its refusals. Register with its params type.
-4. `[ ]` **Tests for 3 — claim A1.** `validate()` reproducing the seeded rate at
+4. `[x]` **Tests for 3 — claim A1.** `validate()` reproducing the seeded rate at
    `eps = 1e-4/1e-5/1e-6` (the residual must fall linearly in `eps`, which is what
    identifies it as the nonlinear correction); a growing and a decaying mode, so the
    check spans a sign change; the continuum form as a **tooth** (39% and 184% off);
    the complex-pair and near-zero-rate refusals.
-5. `[ ]` **`selection_report` + tests — claim B.** Mean, SE, and the separation from
+5. `[x]` **`selection_report` + tests — claim B.** Mean, SE, and the separation from
    every competing hypothesis, asserting the **discrimination margin** rather than
    agreement. Ship configs: `n = 112` for the discrimination (the operators differ
    by 2.6 modes there; the continuum is excluded at 16.6 SE) and `n = 256` for the
@@ -87,18 +87,44 @@ implementation is correct and must be confirmed able to fail.
    `lambda* t = 20`. Assert independence from the initial condition using the
    `initial_mode` observable. **`n = 160` is not a config — it is a recorded
    finding**, and a test pins it so the trap cannot be re-entered silently.
-6. `[ ]` **Teeth, seed-verified at 4 seeds.** Continuum operator in `dispersion`;
+6. `[x]` **Teeth, seed-verified at 4 seeds.** Continuum operator in `dispersion`;
    band centre as the prediction; lowest unstable mode; the transposed reaction
    Jacobian; `det J` mutated off `u*^2`. Each must be red for a *structurally*
    robust reason, and any leg that is not gets moved rather than loosened.
-7. `[ ]` **`demos/schnakenberg.py`.** The dispersion curve across its sign change,
+7. `[x]` **`demos/schnakenberg.py`.** The dispersion curve across its sign change,
    the emergent 1-D pattern with its spectrum, the amplitude-vs-`sqrt(d - d_c)`
    panel **labelled with why its slope is not the exponent**, and a 2-D panel
    labelled qualitative. Every panel's claim checked by looking at the PNG, because
    in this project a figure has been wrong in every phase that shipped one.
-8. `[ ]` **Close-out.** Re-time the suite with a same-session baseline *and* the
+8. `[x]` **Close-out.** Re-time the suite with a same-session baseline *and* the
    xdist worker tags; update `CLAUDE.md`, `HANDOFF.md` §5's Phase 2 line, Phase 2's
    deferral list, memory; commit and push.
+
+## Built — what changed against this plan
+
+Every numbered item above is done. Four things came out differently, and each is
+recorded in `phase2c-schnakenberg-measurement.md` §7a and §13 rather than quietly
+absorbed:
+
+* **The ship configuration is `n = 112` at `R = 32`, not `R = 16`**, and `n = 160` is
+  a *contrast* case rather than "the trap": at the shipped step size the trap this
+  plan was written around does not reproduce. Item 5's parenthetical about `n = 160`
+  was wrong and is corrected there.
+* **`core/selection.py` was needed after all** — this plan put the report "in the
+  model", but it consumes only the protocol surface (two named scalar observables)
+  and takes the prediction and competitors from its caller, so it belongs beside
+  `core/convergence.py` as a third validation track. No model imports it; the tests
+  and the demo wire the model's own arithmetic into it, exactly as `repressilator`
+  and `convergence_report` are wired.
+* **A front-end preset was required**, which this plan did not anticipate.
+  `test_the_presets_cover_every_built_in_model` failed the moment the model was
+  registered — the picker owes every built-in model a starting point — so
+  `web/presets.json` gains a `schnakenberg` entry with a **measured** budget
+  (`--measure-presets`: 3 000 steps, 0.74 s native).
+* **Item 6's teeth list shrank and grew.** The transposed-Jacobian tooth is caught by
+  the central-difference check but is *invisible* to the determinant identity
+  (`det J^T = det J`), which is now asserted as its own test. A mutation pass of 22
+  killed 20; the two real gaps it found were both checks nothing could fail.
 
 ## Explicitly deferred (do NOT do here)
 
