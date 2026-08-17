@@ -65,6 +65,48 @@ uv run python -m sandbox.demos.wright_fisher   # end-to-end demo
 
 ## Status
 
+**Phase 4 — the browser front-end — is planned, not built.**
+`docs/plans/phase4-plan.md`. It closes the `HANDOFF.md` §4 browser-vs-local fork,
+which that document told the reader to *"decide early"* and which went undecided
+through four phases; it was settled by measurement, in two slices
+(`docs/plans/phase4-{browser-fork,worker-and-rendering}-measurement.md`), and both
+of HANDOFF's load-bearing claims about it were corrected in the same commit —
+§4's "costs a reimplementation of the numerics" (it does not; the wheel runs
+unmodified in Pyodide at ~2x native) and §8's "implement Phase 0".
+
+**The real cost is the plumbing, and the plumbing is now a measurement rather than
+a design consequence.** Running an SSA on the main thread blocks the page for the
+*entire* run — 1 750 ms at 60 000 events, with the event loop getting **zero**
+turns — while the same run in a Web Worker blocks it for **10-23 ms** at identical
+Python speed (`0.5823` vs `0.5826 s`). Crossing JS→Python is free (4 096 calls cost
+less than one 115 ms workload's noise). **The whole drawing path — numpy colormap,
+wasm→JS, `putImageData` — is 1.6-2.2% of a frame at every grid size, and the
+simulation step is 98%.** matplotlib renders correctly but stays out of the default
+bundle: it multiplies the gzipped download **2.1x** (8.7 → 18.4 MB) to buy
+0.07-0.16 s static PNGs.
+
+**Three measuring instruments were wrong before any of them was right, and two
+produced plausible numbers rather than errors** — the phase's most transferable
+result, and the "green for the wrong reason" pattern arriving in a new domain.
+`requestAnimationFrame` is *suspended* in a background tab, so the freeze detector
+reported `worst freeze 1840 ms` for the **worker** arm, identical to the
+main-thread arm, because neither was being measured; replaced by a MessageChannel
+ping-pong, which is a task rather than a timer and so survives the throttling.
+`performance.now()` is coarsened to **0.1 ms** outside a cross-origin-isolated
+page, so every single-shot sub-millisecond reading was a rounding artifact. And a
+`getBuffer()`-vs-`toJs()` comparison measured equal because **`toJs()` on a float64
+ndarray returns a `Float64Array`** — one operation spelled twice. Also a fifth
+wrong figure-claim: the first in-browser plot was a valid PNG with correct axes and
+**no data**, because its filter tested `startswith("m")` against observables named
+`x_m1 … x_p3`.
+
+**Two things the slice does not establish, stated rather than buried.** Every probe
+ran with the tab hidden, so the drawing path's *CPU* cost is measured while
+**compositing and vsync are not** — "the animation is smooth" is a different claim,
+and the slice carries a probe that waits for a visible tab instead of faking it.
+And the machine was contended by unrelated processes at ~25-30%, with **4x swings
+inside one session**, so only ratios and fractions are quoted as measurements.
+
 **Phases 0-3 are all complete.** The validated core is 14 models plus
 `core/random_matrix.py`; the `models/ecosystem/` quarantine is still **empty**,
 and that remains the correct outcome. Suite **720 passed in 373.81 s** at `-n 6`,

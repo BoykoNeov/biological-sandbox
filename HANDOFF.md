@@ -134,6 +134,18 @@ This shapes everything downstream, so make the call deliberately:
 
 A reasonable hybrid: build the validated core in Python first (fastest path to a correct, checkable engine), keep the `Visualizer` backend pluggable, and add a browser/shader front-end for the demos that benefit most (Gray-Scott above all) once the core is proven.
 
+> **Decided, after Phase 3, by measurement — and the cost above is wrong.** The
+> browser branch does **not** cost a reimplementation of the numerics *for this
+> codebase*: the dependency surface is `numpy` plus the standard library, Pyodide
+> ships NumPy, and the project's own wheel installs unmodified and passes the
+> ValidationSuite in a browser tab at ~2x native. What the branch actually costs is
+> a **Web Worker and a message protocol** — without one the main thread blocks for
+> the entire duration of a run, never yielding once — and an **8.7 MB gzipped
+> download**. The "hybrid" above is what is being built, with one amendment: the
+> *shader* half is refused by default, because a WebGL Gray-Scott **would** be the
+> reimplementation of the numerics this branch otherwise avoids. See
+> `docs/plans/phase4-plan.md` and the two `phase4-*-measurement.md` documents.
+
 ---
 
 ## 5. Build order (the spine of the whole effort)
@@ -192,4 +204,20 @@ The deepest obstacle across the whole ambitious arc is **multi-scale coupling**:
 
 ## 8. Immediate next action
 
-Implement Phase 0: the Wright-Fisher vertical slice through `protocol → model → recorder → visualizer → sweep → validation`, with the neutral-fixation-probability check passing over many replicates. Get that green, then proceed to Gillespie.
+**Phases 0-3 are complete**, so the original text here — "implement Phase 0" — has
+been stale since the first phase closed. It is kept below for the record.
+
+**The next action is Phase 4: the browser front-end** (`docs/plans/phase4-plan.md`).
+That closes the §4 fork, which this document told the reader to *"decide early"*
+and which went undecided through four phases. It was settled by measurement rather
+than argument, and **§4's stated cost for the browser branch does not survive
+it** — see the deviation note in §4 above and the two measurement documents:
+
+- `docs/plans/phase4-browser-fork-measurement.md` — the numerics in WebAssembly.
+- `docs/plans/phase4-worker-and-rendering-measurement.md` — the worker requirement
+  and the cost of drawing.
+
+> *Original text, superseded:* Implement Phase 0: the Wright-Fisher vertical slice
+> through `protocol → model → recorder → visualizer → sweep → validation`, with the
+> neutral-fixation-probability check passing over many replicates. Get that green,
+> then proceed to Gillespie.
