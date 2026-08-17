@@ -403,17 +403,21 @@ def power_by_mode(field: np.ndarray) -> np.ndarray:
     its power around a ring rather than onto a single ``(jx, jy)`` — a stripe pattern
     and a spot pattern of the same wavelength must report the same wavenumber.
 
-    The uniform mode is zeroed rather than skipped: the mean is not a wavelength, and
-    zeroing it makes the returned array's index *be* the mode number.
+    The uniform component is removed by **zeroing mode 0 and nothing else** — the
+    field is *not* mean-subtracted first. Both would work, and having both is worse
+    than having one: with the mean already subtracted, mode 0 comes out as exact
+    floating-point cancellation on a symmetric field, so deleting the zeroing changes
+    nothing and no test can fail. That was found by mutation, and it is this project's
+    "a threshold nothing can fail is not a check" arriving in a spectral estimator.
+    One mechanism, and removing it is catastrophic and therefore visible.
     """
-    centred = field - field.mean()
-    if centred.ndim == 1:
-        power = np.abs(np.fft.rfft(centred)) ** 2
+    if field.ndim == 1:
+        power = np.abs(np.fft.rfft(field)) ** 2
         power[0] = 0.0
         return power
 
-    n = centred.shape[0]
-    full = np.abs(np.fft.fft2(centred)) ** 2
+    n = field.shape[0]
+    full = np.abs(np.fft.fft2(field)) ** 2
     axis = np.fft.fftfreq(n, d=1.0 / n)
     radius = np.sqrt(axis[:, None] ** 2 + axis[None, :] ** 2)
     radial = np.bincount(

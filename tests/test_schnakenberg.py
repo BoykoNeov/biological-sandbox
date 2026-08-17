@@ -130,6 +130,27 @@ def run_selection(config: dict, replicates: int, seed: int = 0):
     )
 
 
+def run_selection_with_band(config: dict, replicates: int, band: tuple[int, int]):
+    """As :func:`run_selection`, but with the band supplied — so it can be wrong."""
+    params = factory(config)
+    competitors, _ = competing_hypotheses(params)
+    lam, _, _ = dispersion(params, int(fastest_mode(params)))
+    return selection_report(
+        "schnakenberg",
+        config,
+        factory,
+        predicted_mode=fastest_mode(params, continuous=True),
+        competitors=competitors,
+        band=band,
+        replicates=replicates,
+        seed=0,
+        z=4.0,
+        max_steps=n_steps(params) + 10,
+        record_every=n_steps(params),
+        efolds=lam * params.t_max,
+    )
+
+
 @pytest.fixture(scope="module")
 def coarse_report():
     """The headline measurement. ~14 s, so it is shared across every test using it."""
@@ -433,11 +454,21 @@ def test_dominant_mode_recovers_a_planted_wave(planted: int) -> None:
 
 
 def test_dominant_mode_ignores_the_uniform_component() -> None:
-    """A large mean must not become "mode 0", which is not a wavelength."""
+    """A large mean must not become "mode 0", which is not a wavelength.
+
+    The offset here is a million times the pattern, so mode 0 dominates the raw
+    spectrum by twelve orders of magnitude and only the explicit zeroing can hide it.
+    An earlier version of this test could not fail: the estimator subtracted the mean
+    *and* zeroed mode 0, and on a symmetric field the subtraction cancelled exactly,
+    so deleting the zeroing changed nothing. Found by mutation.
+    """
     params = params_at(mode_j=11)
     field = 1000.0 + 0.001 * mode_template(params)
-    assert dominant_mode(field) == 11
+    raw = np.abs(np.fft.rfft(field)) ** 2
+    assert raw[0] > 1e12 * raw[11]  # the offset really does swamp the pattern
     assert power_by_mode(field)[0] == 0.0
+    assert dominant_mode(field) == 11
+    assert peak_power_fraction(field) == pytest.approx(1.0, abs=1e-12)
 
 
 def test_dominant_mode_in_two_dimensions_bins_radially() -> None:
@@ -704,6 +735,34 @@ def test_the_prediction_is_the_closest_hypothesis_not_an_exact_one(coarse_report
     assert coarse_report.gap_to_prediction < min(gaps)
     assert 1.0 < coarse_report.gap_in_se < 4.0
     assert 0.2 < coarse_report.gap_to_prediction < 0.5
+
+
+def test_the_margin_is_a_difference_of_gaps_not_a_gap(coarse_report) -> None:
+    """The report's arithmetic, restated independently of the report.
+
+    A margin must be ``(gap_competitor - gap_prediction) / SE``: a bare
+    ``gap_competitor / SE`` would grade a hypothesis on how far it is from the
+    measurement without asking whether the prediction does any better, which is not a
+    discrimination at all. Mutating the formula survived every other test here, so it
+    gets its own.
+    """
+    for check in coarse_report.checks:
+        expected = (check.gap - coarse_report.gap_to_prediction) / coarse_report.sem
+        assert check.margin_se == pytest.approx(expected, rel=1e-12)
+        assert check.gap == pytest.approx(abs(coarse_report.measured_mean - check.mode), rel=1e-12)
+
+
+def test_the_band_guard_can_fail(coarse_report) -> None:
+    """The containment guard, made falsifiable.
+
+    Every replicate lands inside the true band, so hard-coding ``all_inside_band =
+    True`` is invisible — another check nothing could fail. Handing the report a band
+    that excludes the answer must flip it, and must sink the whole report.
+    """
+    wrong = run_selection_with_band(COARSE, replicates=2, band=(1, 3))
+    assert not wrong.all_inside_band
+    assert not wrong.passed
+    assert coarse_report.all_inside_band  # and the real band still contains them
 
 
 def test_every_replicate_selects_inside_the_unstable_band(coarse_report) -> None:
