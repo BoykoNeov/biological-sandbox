@@ -202,7 +202,21 @@ error, printed as `EXCLUDED` at `~1e12 SE`. `selection_report` refuses it — un
 a stronger claim than a margin — and the refusal caught one of the module's own tests
 immediately, which had used two replicates that happen to agree.
 
-**Mutation: 20/22 red, and both real gaps were "a check nothing can fail".** The
+**The seeded-rate tolerance started as a typed epsilon, and deriving it found a second
+error source.** `sem_floor = 1e-6 * |rate|` sat in a wide measured gap and would have
+passed forever, but Gray-Scott's test *derives* its floor by Richardson in the
+amplitude, and doing the same here (the `4/3` justified by the measured `eps^2` order)
+showed something the typed version could not: at the **amplified** mode the bound
+predicts the true error to **1.00** — the sixth outing for this instrument and the first
+scored against a known answer — while at a **decaying** mode it is 2-3x too large and
+scatters `0.28/0.83/2.77/3.43` across horizons. The reason is derivable: the exponent is
+`log(a(T)/a(0))/T`, so double precision floors it at `eps_mach*u*/(|a(T)| T)`, which
+**explodes when the amplitude decays** — `6.8e-09` against a true error of `6.3e-09` at
+`j = 40`, i.e. the residual *is* the floor. Phase 3d hit the same wall by lengthening a
+horizon. The shipped floor is `max(Richardson, double-precision)`, two derived bounds
+whose crossover is asserted in both directions.
+
+**Mutation: 23/25 red, and both real gaps were "a check nothing can fail".** The
 spectral estimator subtracted the mean *and* zeroed mode 0, so on a symmetric field the
 subtraction cancelled exactly and deleting the zeroing changed nothing — two mechanisms
 where only one is testable. And a margin mutated from `(gap_comp - gap_pred)/SE` to

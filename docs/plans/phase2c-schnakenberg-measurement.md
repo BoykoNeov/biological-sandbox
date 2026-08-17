@@ -420,13 +420,51 @@ in the figure rather than in its caption. The 2-D panel was then re-gridded from
 shows the grid instead of the wavelength — and at `n = 128` both seeds hit the
 predicted mode exactly (25 and 25), where `n = 96` had missed by one.
 
-**Mutation: 20 of 22 killed, and the two real gaps were both "a check nothing can
+**The seeded-rate tolerance was a hardcoded epsilon, and replacing it found a second
+error source.** The first version passed `sem_floor = 1e-6 * |rate|` to `validate()`,
+justified in prose: it sits in a wide measured gap and it would have passed forever.
+But it is exactly the typed tolerance non-negotiable #2 exists to prevent, and
+Gray-Scott's own test *derives* its floor by Richardson in the amplitude. Deriving it
+here — `(4/3)|m(eps) - m(eps/2)|`, with the `4/3` justified by the measured `eps^2`
+order — immediately produced a result the typed version could never have shown:
+
+| probe | amplification over the run | true error | Richardson bound | ratio |
+|---|---|---|---|---|
+| `j = 24` (grows) | `20.5x` | `1.561e-09` | `1.560e-09` | **1.00** |
+| `j = 19` (barely grows) | `1.6x` | `1.057e-11` | `6.199e-12` | 0.59 |
+| `j = 40` (decays) | `8.7e-05` | `6.312e-09` | `1.751e-08` | 2.77 |
+| `j = 50` (decays hard) | `4.5e-06` | `3.871e-07` | `8.344e-07` | 2.16 |
+
+At the amplified mode Richardson predicts the truth to **1.00**, the sixth outing for
+this instrument and the first scored against a *known* answer rather than a finer run.
+At the decaying modes it is 2-3x too large, and across horizons its ratio scatters
+`0.28 / 0.83 / 2.77 / 3.43` — noise, not a bound.
+
+**The reason is derivable, and it is Phase 3d's wall from the other side.** The exponent
+is `log(a(T)/a(0))/T`, so an absolute rounding `delta` in the amplitude moves it by
+`delta/(a(T) T)`, and with `delta ~ eps_mach * u*` that floor is
+`eps_mach * u* / (|a(T)| T)` — which **explodes for a decaying mode**, whose amplitude
+is `eps * exp(-|lambda| T)`. At `j = 40` it evaluates to `6.8e-09` against a true error
+of `6.3e-09`: the residual *is* the floor, so there is no nonlinear signal left to
+extrapolate. At `j = 24` it is `3e-14` against `1.6e-09`, four orders away, which is why
+that is the probe the ratio can be scored at. 3d met the same thing by *lengthening* a
+horizon until the true residual hit the floating-point floor while its bound kept
+shrinking, driving the ratio to `3.2e7`.
+
+So the shipped floor is `max(Richardson, double-precision)` — two derived bounds,
+neither dominating everywhere, and which one wins is a fact about the mode. A test
+asserts the crossover in both directions rather than describing it.
+
+**Mutation: 23 of 25 killed, and the two real gaps were both "a check nothing can
 fail".** The spectral estimator subtracted the mean *and* zeroed mode 0, so on a
 symmetric field the subtraction cancelled exactly and deleting the zeroing changed
 nothing — two mechanisms where one is testable. And a margin mutated from
 `(gap_competitor - gap_prediction)/SE` to `gap_competitor/SE` survived every test,
 because on the contrast grid both formulas land under `z = 4` and the test only
-asserted that the report fails. Both now have their own assertions. The two remaining
+asserted that the report fails. Both now have their own assertions. Two test-side mutants
+confirm the Richardson band pins the error's **order** rather than its rough size:
+dropping the `4/3` (assuming first order) reads `0.75`, doubling it reads `1.5`, and the
+`+-25%` band kills both — which is why the band is not `+-100%`. The two remaining
 survivors are provable no-ops: a tie-break in `argmax` that no real spectrum reaches,
 and a population-vs-sample standard deviation, which moves a margin by 1.6% at
 `R = 32` against 67% of headroom.
