@@ -439,3 +439,47 @@ reached by moving the *ratio* to onset instead (`1.001 d_c`, rate `2.15e-4`). An
 `a = 0.02, b = 4.0` looks like a wildly unstable state and has `trace = -15.2`;
 trace > 0 needs `(a+b)^3 < b-a`, so both parameters must be small (`a = 0.01,
 b = 0.5` gives `+0.70`).
+
+**A green-for-the-wrong-reason that only appears at small replicate counts.** A
+quantized measurement can come out **unanimous** — measured, 6 of 6 replicates select
+the same mode at `L = 2, n = 64` and at `L = 4, n = 128` — and then the spread is
+exactly zero, so every competitor's margin is a gap divided by zero and the report
+would print `EXCLUDED` at ~`1e12 SE`. `selection_report` refuses it: unanimity is a
+*stronger and simpler* claim than a margin and belongs in its own assertion. The
+refusal caught one of this module's own tests within a minute of being written — it had
+used two replicates, and at the shipped coarse config the first two agree (the third is
+the first that differs).
+
+## 14. Suite
+
+**924 passed, 12 skipped in 344.22 s** at `-n 6`, against a same-session baseline of
+**850 passed, 12 skipped in 441.39 s** with the module ignored. The suite is **97 s
+faster with 74 more tests in it**, so — by this project's own rule, now on its fifth
+repetition — the totals are **not attributable to the test set**.
+
+The decomposition, and it is unusually clean because the discriminating quantity is
+identifiable:
+
+| | full (924) | baseline (850) | ratio |
+|---|---|---|---|
+| total | 344.22 s | 441.39 s | 0.78 |
+| the three repressilator tests (untouched by 2c) | 288.06 s | 320.01 s | 0.90 |
+| the next five slowest (also untouched) | 143.04 s | 168.37 s | 0.85 |
+| worker carrying the repressilator trio | `gw4` | `gw0` | — |
+
+Every *untouched* test ran 10-18% slower in the baseline arm, which is where the 97 s
+comes from. **And the baseline arm was contended by this session's own work** — two
+runs of the new module and a measurement script overlapped it — so its total is
+inflated by an amount this does not separate from drift. Recorded rather than glossed:
+the honest conclusion is that **no regression is visible and nothing stronger is
+claimable**.
+
+**What is attributable is where the new module's cost lands.** Standalone it is
+**39.2-41.2 s** at `-n 6` for 75 tests, dominated by two shared selection reports (a
+32-replicate one at ~22 s and an 8-replicate one at ~8 s), which means it barely
+parallelises — one fixture is most of it. In the suite, xdist put the expensive tests on
+`gw3` while the critical path (`gw4`, carrying 288 s of repressilator) received only the
+millisecond closed-form checks. So the module cannot move the total unless a future
+collection reshuffles it onto the critical worker, which is the
+`xdist-packing-is-the-discriminating-quantity` lesson holding for a fifth phase: read
+the worker tags, and remember that adding *any* test reshuffles the packing.

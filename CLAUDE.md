@@ -183,6 +183,25 @@ harmonics have nowhere to go. The selected *mode*, by contrast, is identical at 
 45.3 and 113.3 e-folds on both grids. **How sinusoidal the pattern is and whether the
 mode has settled are different questions.**
 
+**Suite (Phase 2c): 924 passed, 12 skipped in 344.22 s at `-n 6`**, against a
+same-session baseline of **850 passed in 441.39 s** with the module ignored — i.e.
+*97 s faster with 74 more tests*, so the totals are not attributable to the test set.
+The decomposition is clean and its confound is stated: every **untouched** test ran
+10-18% slower in the baseline arm (the three repressilator tests `288.06 → 320.01 s`,
+the next five slowest `143.04 → 168.37 s`), **and that arm was contended by this
+session's own runs**, so no regression is visible and nothing stronger is claimable.
+What *is* attributable is where the cost lands: standalone the module is **39.2-41.2 s**
+at `-n 6`, most of it one 32-replicate fixture, and in the suite xdist put the expensive
+tests on `gw3` while the critical path — `gw4`, carrying 288 s of repressilator —
+received only millisecond closed-form checks.
+
+**A green-for-the-wrong-reason that only bites at small replicate counts**, and the
+last thing found: a quantized measurement can come out **unanimous** (6 of 6 replicates
+pick the same mode in a small box), and then every margin is a gap over a zero standard
+error, printed as `EXCLUDED` at `~1e12 SE`. `selection_report` refuses it — unanimity is
+a stronger claim than a margin — and the refusal caught one of the module's own tests
+immediately, which had used two replicates that happen to agree.
+
 **Mutation: 20/22 red, and both real gaps were "a check nothing can fail".** The
 spectral estimator subtracted the mean *and* zeroed mode 0, so on a symmetric field the
 subtraction cancelled exactly and deleting the zeroing changed nothing — two mechanisms
