@@ -9,6 +9,13 @@ export class WorkerClient {
     this.worker = new Worker(url);
     this.pending = new Map();
     this.nextId = 0;
+    // A worker outlives its page unless it is told not to. Reloading during a
+    // run therefore leaves an orphan grinding through the rest of it, invisible
+    // and holding a whole Pyodide heap -- and a few reloads while iterating are
+    // enough to make the next boot look mysteriously slow. `pagehide` rather
+    // than `unload`, because `unload` does not fire on a page restored from the
+    // back/forward cache.
+    window.addEventListener("pagehide", () => this.terminate());
     this.worker.onmessage = (event) => this._receive(event);
     this.worker.onerror = (event) => {
       // A worker that dies takes every in-flight request with it. Rejecting them

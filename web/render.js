@@ -58,11 +58,18 @@ function tickLabel(value, step) {
 export class TraceChart {
   /**
    * @param canvas   the target canvas
-   * @param options  {keys, xMax, xLabel, yLabel}
+   * @param options  {keys, xMax, xLabel, yLabel, title, colorOffset}
+   *
+   * ``colorOffset`` lets two panels of one run share a hue per entity: the
+   * repressilator's mRNA panel and protein panel both start at slot 0, so gene
+   * 1's mRNA and gene 1's protein are the same colour in both. Colour follows
+   * the entity, not the panel.
    */
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
+    this.title = options.title ?? "";
+    this.colorOffset = options.colorOffset ?? 0;
     this.keys = options.keys ?? [];
     this.visible = new Set(this.keys);
     this.xLabel = options.xLabel ?? "time";
@@ -84,6 +91,7 @@ export class TraceChart {
       yLo: 0,
       yHi: 0,
       hasData: false,
+      _columnCount: null,
     });
     this.visible = new Set(this.keys);
   }
@@ -97,16 +105,56 @@ export class TraceChart {
     for (const key of this.keys) this._grow(limit.series[key]);
   }
 
-  /** Append a drained chunk for one replicate. Points are never re-sent. */
+  /**
+   * Append a drained chunk for one replicate. Points are never re-sent.
+   *
+   * The min/max envelope is folded in HERE, not at draw time. The data is
+   * append-only and the x-scale is fixed for the whole run, so a point's column
+   * never changes once assigned — which makes a redraw cost O(columns) instead
+   * of O(points). Measured on a 400 000-event trace with four replicates and six
+   * series: 43 ms per redraw recomputing from scratch, and the p95 was a second.
+   * Drawing must not get more expensive the longer a run goes, or a demo that
+   * streams gets worse exactly as it gets interesting.
+   */
   append(index, chunk) {
-    while (this.replicates.length <= index) this.replicates.push({ t: [], series: {} });
+    while (this.replicates.length <= index) {
+      this.replicates.push({ t: [], series: {}, envelope: {} });
+    }
     const store = this.replicates[index];
+    const columns = this._columns();
     store.t.push(...chunk.t);
     for (const [key, values] of Object.entries(chunk.series)) {
+      // A chart draws only the keys it was given. Two panels over one run is how
+      // series of different magnitude are shown -- never two y-scales on one
+      // frame, which lets a reader compare two things that are not comparable.
+      if (!this.keys.includes(key)) continue;
       (store.series[key] ??= []).push(...values);
       if (this.visible.has(key)) this._grow(values);
+      const band = (store.envelope[key] ??= {
+        lo: new Float64Array(columns).fill(Infinity),
+        hi: new Float64Array(columns).fill(-Infinity),
+      });
+      const offset = store.t.length - values.length;
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value === null || !Number.isFinite(value)) continue;
+        const column = this._columnOf(store.t[offset + i], columns);
+        if (value < band.lo[column]) band.lo[column] = value;
+        if (value > band.hi[column]) band.hi[column] = value;
+      }
     }
     if (chunk.t.length) this.hasData = true;
+  }
+
+  /** Envelope resolution. Fixed for a run so a point's column never moves. */
+  _columns() {
+    this._columnCount ??= Math.max(200, Math.round(this.canvas.clientWidth || 900));
+    return this._columnCount;
+  }
+
+  _columnOf(t, columns) {
+    const fraction = this.xMax > 0 ? t / this.xMax : 0;
+    return Math.min(columns - 1, Math.max(0, Math.round(fraction * (columns - 1))));
   }
 
   _grow(values) {
@@ -141,7 +189,7 @@ export class TraceChart {
     const line = cssVar("--line", "#dfe2ea");
     const colors = seriesColors();
 
-    const pad = { top: 14, right: 74, bottom: 34, left: 54 };
+    const pad = { top: this.title ? 26 : 14, right: 60, bottom: 34, left: 56 };
     const plotW = Math.max(10, width - pad.left - pad.right);
     const plotH = Math.max(10, height - pad.top - pad.bottom);
 
@@ -180,8 +228,18 @@ export class TraceChart {
       ctx.fillText(tickLabel(tick, xStep), x, pad.top + plotH + 8);
     }
 
+    if (this.title) {
+      ctx.fillStyle = ink;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = "600 12px system-ui, sans-serif";
+      ctx.fillText(this.title, pad.left, 16);
+      ctx.font = "11px ui-monospace, Consolas, monospace";
+    }
+
     ctx.fillStyle = muted;
     ctx.textAlign = "center";
+    ctx.textBaseline = "top";
     ctx.fillText(this.xLabel, pad.left + plotW / 2, height - 12);
     ctx.save();
     ctx.translate(12, pad.top + plotH / 2);
@@ -208,12 +266,12 @@ export class TraceChart {
     for (const store of this.replicates) {
       for (const [k, key] of this.keys.entries()) {
         if (!this.visible.has(key)) continue;
-        const values = store.series[key];
-        if (!values || values.length < 2) continue;
-        ctx.strokeStyle = colors[k % colors.length];
+        const band = store.envelope[key];
+        if (!band) continue;
+        ctx.strokeStyle = colors[(k + this.colorOffset) % colors.length];
         ctx.globalAlpha = 0.45;
         ctx.lineWidth = 1;
-        this._strokeEnvelope(ctx, store.t, values, xOf, yOf, plotW, pad.left);
+        this._strokeEnvelope(ctx, band, yOf, plotW, pad.left);
         ctx.globalAlpha = 1;
       }
     }
@@ -224,7 +282,7 @@ export class TraceChart {
         if (!this.visible.has(key)) continue;
         const values = this.limit.series[key];
         if (!values) continue;
-        ctx.strokeStyle = colors[k % colors.length];
+        ctx.strokeStyle = colors[(k + this.colorOffset) % colors.length];
         ctx.lineWidth = 2;
         ctx.beginPath();
         let started = false;
@@ -251,7 +309,11 @@ export class TraceChart {
     if (source) {
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      const placed = [];
+      // Collect first, then de-collide by spreading within the frame. Nudging
+      // each label down as it is placed pushes the last ones off the bottom,
+      // which is how the first version of this ended up with six labels in a
+      // pile below the axis.
+      const wanted = [];
       for (const [k, key] of this.keys.entries()) {
         if (!this.visible.has(key)) continue;
         const values = source.series?.[key] ?? source[key];
@@ -261,11 +323,21 @@ export class TraceChart {
           if (values[i] !== null && Number.isFinite(values[i])) last = values[i];
         }
         if (last === null) continue;
-        let y = yOf(last);
-        while (placed.some((p) => Math.abs(p - y) < 12)) y += 12;
-        placed.push(y);
-        ctx.fillStyle = colors[k % colors.length];
-        ctx.fillText(key, pad.left + plotW + 8, Math.max(pad.top + 6, Math.min(y, pad.top + plotH)));
+        wanted.push({ key, k, y: yOf(last) });
+      }
+      wanted.sort((a, b) => a.y - b.y);
+      const gap = 13;
+      const top = pad.top + 6;
+      const bottom = pad.top + plotH - 6;
+      for (let i = 0; i < wanted.length; i++) {
+        wanted[i].y = Math.max(wanted[i].y, top + i * gap);
+      }
+      for (let i = wanted.length - 1; i >= 0; i--) {
+        wanted[i].y = Math.min(wanted[i].y, bottom - (wanted.length - 1 - i) * gap);
+      }
+      for (const label of wanted) {
+        ctx.fillStyle = colors[(label.k + this.colorOffset) % colors.length];
+        ctx.fillText(label.key, pad.left + plotW + 7, label.y);
       }
     }
 
@@ -276,34 +348,23 @@ export class TraceChart {
   }
 
   /**
-   * Draw a series as a per-pixel-column min/max envelope.
+   * Stroke a pre-folded min/max envelope.
    *
-   * Not a stride. Taking every k-th point of a 400 000-event SSA trace draws a
-   * tidier trace than the model produces, and the untidiness is the subject.
-   * The envelope keeps the visible amplitude of the noise exactly.
+   * Min/max per column, never a stride. Taking every k-th point of a 400 000-event
+   * SSA trace draws a tidier trace than the model produces, and the untidiness is
+   * the subject: the whole picture is how much the replicates scatter around
+   * their limit. The envelope keeps the visible amplitude of that scatter exactly.
    */
-  _strokeEnvelope(ctx, times, values, xOf, yOf, plotW, left) {
-    const columns = Math.max(1, Math.round(plotW));
-    const lo = new Float64Array(columns).fill(Infinity);
-    const hi = new Float64Array(columns).fill(-Infinity);
-    let any = false;
-    for (let i = 0; i < values.length; i++) {
-      const v = values[i];
-      if (v === null || !Number.isFinite(v)) continue;
-      const column = Math.min(columns - 1, Math.max(0, Math.round(xOf(times[i]) - left)));
-      if (v < lo[column]) lo[column] = v;
-      if (v > hi[column]) hi[column] = v;
-      any = true;
-    }
-    if (!any) return;
-
+  _strokeEnvelope(ctx, band, yOf, plotW, left) {
+    const columns = band.lo.length;
+    const scale = plotW / (columns - 1 || 1);
     ctx.beginPath();
     let started = false;
     for (let column = 0; column < columns; column++) {
-      if (lo[column] === Infinity) continue;
-      const x = left + column + 0.5;
-      const yTop = yOf(hi[column]);
-      const yBottom = yOf(lo[column]);
+      if (band.lo[column] === Infinity) continue;
+      const x = left + column * scale;
+      const yTop = yOf(band.hi[column]);
+      const yBottom = yOf(band.lo[column]);
       if (!started) {
         ctx.moveTo(x, yTop);
         started = true;
@@ -312,7 +373,7 @@ export class TraceChart {
       }
       if (yBottom !== yTop) ctx.lineTo(x, yBottom);
     }
-    ctx.stroke();
+    if (started) ctx.stroke();
   }
 }
 

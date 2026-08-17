@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase 4b — the drawing path, on a tab that is actually on screen</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header>
+  <h1>4b — the drawing path</h1>
+  <p class="lede">
+    Two renderers, both consuming protocol data only: <strong>traces</strong> —
+    stochastic replicates overlaid on the deterministic limit they collapse into —
+    and <strong>fields</strong>, straight from <code>fields()</code> through a numpy
+    colormap to <code>putImageData</code>.
+  </p>
+  <p class="lede">
+    The slice measured what drawing costs the CPU and could not measure whether the
+    result is <em>smooth</em>: <code>putImageData</code> runs whether or not the tab
+    is visible, but compositing and vsync do not. It carried a probe that waited for
+    a visible tab rather than faking one. This is that probe.
+  </p>
+</header>
+
+<section>
+  <h2>Conditions</h2>
+  <dl id="conditions" class="readout"></dl>
+</section>
+
+<section>
+  <h2>1. Traces — the project's organizing picture</h2>
+  <p>
+    Four stochastic replicates of the repressilator, streamed while they run, over
+    the RK4 solution of the mass-action ODE they converge to. The limit is drawn
+    thick, the replicates thin and translucent; both come from the same model
+    through the same protocol.
+  </p>
+  <p>
+    <strong>Two panels, by the model's own grouping.</strong> Six oscillators in one
+    frame cross each other constantly and no single curve can be followed. The split
+    is mRNA and protein, and each gene keeps its hue across both, so gene 1's mRNA
+    and gene 1's protein are the same colour in the two panels.
+  </p>
+  <p class="muted">
+    The two panels come out looking almost the same, and that is a result rather
+    than a duplication: at <code>β = 1</code> the protein and mRNA timescales are
+    equal, so each protein simply follows its own mRNA with a lag. Their ranges are
+    also comparable — the limit runs to <code>153.0</code> in mRNA and
+    <code>135.4</code> in protein — so this is <em>not</em> a case of one series
+    being flattened by another's scale. (It was written up as one here, from a
+    guess, until the numbers were checked.)
+  </p>
+  <p><span id="spinner"></span> <button id="run-traces" disabled>run</button></p>
+  <canvas id="trace-m" style="width: 100%; height: 240px;"></canvas>
+  <canvas id="trace-p" style="width: 100%; height: 240px;"></canvas>
+  <div class="legend" id="trace-legend"></div>
+  <dl id="trace-report" class="readout"></dl>
+</section>
+
+<section>
+  <h2>2. Fields — and what a finer grid really costs</h2>
+  <p>
+    Gray-Scott at Pearson's parameters, swept over three grid sizes. <code>dt</code>
+    is <em>derived</em> from the grid rather than typed: the CFL limit forces it down
+    as the grid refines, so a step size that is stable at 64² is unstable at 256²,
+    and quoting frames per second hides that a finer grid pays twice.
+  </p>
+  <p>
+    This pattern is <strong>exploratory</strong>. At Pearson's <code>(F, k)</code>
+    there is no real non-trivial homogeneous steady state, so these are not Turing
+    patterns and linear stability analysis makes no claim about their wavelength.
+    Nothing here is validated; the validated Gray-Scott claim is the dispersion
+    relation, and it is a scalar.
+  </p>
+  <p><button id="run-fields" disabled>run</button></p>
+  <p>
+    <canvas id="field" class="pixels" style="width: 320px; height: 320px;"></canvas>
+  </p>
+  <p class="muted" style="max-width: 44rem">
+    <strong>What that square is, so it is not mistaken for a result:</strong> this
+    section runs 400 steps per grid, which is <code>t = 200 / 80 / 20</code> — so the
+    picture is the <em>seeded initial condition</em>, barely moved. Pattern formation
+    at these parameters is <code>t ~ 10³</code>, tens of seconds of continuous
+    stepping. Gray-Scott does not make squares; the initial condition is a square
+    patch, and this panel is a stopwatch rather than a demonstration. The running
+    pattern is in the demo.
+  </p>
+  <p>
+    <canvas id="field-scale" style="width: 320px; height: 14px;"></canvas>
+    <span id="field-range" class="muted" style="font-size:.8rem"></span>
+  </p>
+  <dl id="field-report" class="readout"></dl>
+</section>
+
+<section>
+  <h2>Log</h2>
+  <pre id="log"></pre>
+</section>
+
+<script type="module">
+import { WorkerClient, fmt } from "./client.js";
+import { CLOCK_MS, CROSS_ORIGIN_ISOLATED, windowFrom, describeWindow } from "./monitor.js";
+import { TraceChart, FieldView, seriesColors } from "./render.js";
+
+const logEl = document.getElementById("log");
+const say = (line) => {
+  logEl.textContent += line + "\n";
+  console.log("[4b] " + line);
+};
+function defList(target, rows) {
+  const el = document.getElementById(target);
+  el.innerHTML = "";
+  for (const [key, value, cls] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (cls) dd.className = cls;
+    el.append(dt, dd);
+  }
+}
+const quantile = (values, q) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+};
+
+defList("conditions", [
+  [
+    "tab visibility",
+    document.visibilityState +
+      (document.hidden
+        ? " — rAF is SUSPENDED. Every frame figure below is ABSENT, not slow. This page cannot answer its own question here."
+        : " — compositing and vsync are running, so the frame figures mean what they say."),
+    document.hidden ? "bad" : "ok",
+  ],
+  ["clock granularity", `${CLOCK_MS.toFixed(4)} ms`],
+  ["crossOriginIsolated", String(CROSS_ORIGIN_ISOLATED)],
+  ["devicePixelRatio", String(window.devicePixelRatio)],
+  ["screen refresh", "measured below as the ceiling on any fps figure"],
+]);
+
+const client = new WorkerClient("./worker.js");
+say("booting ...");
+const build = await client.send("boot");
+say(`booted pyodide ${build.pyodide}, wheel ${build.wheel_sha256.slice(0, 12)}…`);
+
+// -------------------------------------------------------------------------
+// 1. Traces
+// -------------------------------------------------------------------------
+const TRACE_SPEC = {
+  model: "repressilator",
+  params: {
+    alpha: 216.0,
+    alpha0: 0.216,
+    n_hill: 2.0,
+    beta: 1.0,
+    Omega: 100.0,
+    t_max: 30.0,
+  },
+  replicates: 4,
+  seed: 11,
+  // ~400 000 events is a full trace; record_every keeps each series a few
+  // thousand points, which is a DISPLAY choice and cannot change the run.
+  max_steps: 400000,
+  record_every: 200,
+  limit: { t_max: 30.0, dt: 0.005 },
+};
+
+// Two panels over one run. Both start at colour slot 0, so gene i's mRNA and
+// gene i's protein share a hue.
+const charts = [
+  new TraceChart(document.getElementById("trace-m"), {
+    title: "mRNA",
+    xLabel: "",
+    yLabel: "x = n / Ω",
+    xMax: TRACE_SPEC.params.t_max,
+  }),
+  new TraceChart(document.getElementById("trace-p"), {
+    title: "protein",
+    xLabel: "time (mRNA lifetimes)",
+    yLabel: "x = n / Ω",
+    xMax: TRACE_SPEC.params.t_max,
+  }),
+];
+const drawAll = () => charts.forEach((c) => c.draw());
+
+const traceButton = document.getElementById("run-traces");
+traceButton.disabled = false;
+traceButton.addEventListener("click", () => runTraces());
+
+async function runTraces() {
+  traceButton.disabled = true;
+  const created = await client.send("create", TRACE_SPEC);
+  // The series to draw come from the model, through the protocol. NOT from a
+  // name filter: the browser slice's first figure was a valid PNG with correct
+  // axes and no data because a filter tested startswith("m") against series
+  // named x_m1 … x_p3.
+  const keys = created.observable_keys;
+  // Split by what the model reports, in the order it reports it -- the first
+  // half are the mRNAs and the second the proteins. NOT a name filter: the
+  // slice's first browser figure was a valid PNG with correct axes and no data
+  // because a filter tested startswith("m") against series named x_m1 … x_p3.
+  const half = keys.length / 2;
+  charts[0].reset({ keys: keys.slice(0, half), xMax: TRACE_SPEC.params.t_max });
+  charts[1].reset({ keys: keys.slice(half), xMax: TRACE_SPEC.params.t_max });
+
+  const colors = seriesColors();
+  document.getElementById("trace-legend").innerHTML = keys
+    .map(
+      (key, i) =>
+        `<span><i class="swatch" style="background:${colors[i % half % colors.length]}"></i>${key}</span>`
+    )
+    .join("");
+
+  say("integrating the deterministic limit ...");
+  const limit = await client.send("limit", TRACE_SPEC);
+  charts.forEach((c) => c.setLimit(limit));
+  drawAll();
+
+  const drawMs = [];
+  let frames = 0;
+  const started = performance.now();
+
+  say("streaming the replicates ...");
+  const final = await client.send(
+    "run",
+    { run_id: created.run_id, n_steps: TRACE_SPEC.max_steps, chunk: 4000, every_ms: 40 },
+    (progress) => {
+      for (const [index, part] of progress.data.replicates.entries()) {
+        charts.forEach((c) => c.append(index, part));
+      }
+      const t0 = performance.now();
+      drawAll();
+      drawMs.push(performance.now() - t0);
+      frames++;
+    }
+  );
+  drawAll();
+
+  const window_ = windowFrom(started);
+  await client.send("close", { run_id: created.run_id });
+
+  const points = charts[0].replicates.reduce((n, r) => n + r.t.length, 0);
+  window._traceReport = {
+    window: window_,
+    draw_ms_median: quantile(drawMs, 0.5),
+    draw_ms_p95: quantile(drawMs, 0.95),
+    redraws: frames,
+    points,
+    compute_seconds: final.compute_seconds,
+    steps: final.steps,
+  };
+  defList("trace-report", [
+    ["run", `${final.steps.join(" / ")} events across ${final.steps.length} replicates`],
+    ["stepping", `${fmt(final.compute_seconds)} s inside advance()`],
+    ["points held", `${points} recorded points, drawn as per-column min/max envelopes`],
+    ["redraws", `${frames} (one per progress message)`],
+    [
+      "cost of a redraw",
+      `median ${fmt(quantile(drawMs, 0.5))} ms, p95 ${fmt(quantile(drawMs, 0.95))} ms — ` +
+        `both panels, from scratch, every time`,
+    ],
+    ["page during the run", describeWindow(window_), document.hidden ? "warn" : "ok"],
+    [
+      "share of a 60 fps frame",
+      `${((quantile(drawMs, 0.5) / 16.67) * 100).toFixed(1)}% median, ` +
+        `${((quantile(drawMs, 0.95) / 16.67) * 100).toFixed(1)}% p95`,
+    ],
+  ]);
+  say(`traces done: ${describeWindow(window_)}`);
+  traceButton.disabled = false;
+}
+
+// -------------------------------------------------------------------------
+// 2. Fields
+// -------------------------------------------------------------------------
+const PEARSON = { feed: 0.037, kill: 0.06, du: 2.0e-5, dv: 1.0e-5, length: 1.0 };
+const FIELD_T_MAX = 4000.0;
+
+/**
+ * dt derived from the grid, not typed.
+ *
+ * Explicit diffusion is CFL-limited at h^2 / (2 * ndim * D), and h = L/n, so a
+ * step size that is stable at 64² is unstable at 256². Picking the largest
+ * ladder value at or under half the limit keeps a safety factor and keeps dt a
+ * divisor of t_max, which GrayScottParams requires (and enforces: a wrong dt
+ * raises there rather than blowing up here).
+ */
+function cflDt(n) {
+  const h = PEARSON.length / n;
+  const limit = (h * h) / (4 * Math.max(PEARSON.du, PEARSON.dv));
+  return [0.5, 0.2, 0.1, 0.05, 0.02].find((dt) => dt <= 0.5 * limit) ?? 0.01;
+}
+
+const fieldView = new FieldView(
+  document.getElementById("field"),
+  document.getElementById("field-scale")
+);
+
+const fieldButton = document.getElementById("run-fields");
+fieldButton.disabled = false;
+fieldButton.addEventListener("click", () => runFields());
+
+async function runFields() {
+  fieldButton.disabled = true;
+
+  const strip = await client.send("colormap_strip", { cmap: "ember", width: 256, height: 8 });
+  fieldView.putScale(strip.rgba, strip);
+
+  const rows = [
+    [
+      "estimator",
+      "median over frames of each stage, per grid. The fraction is the measurement; " +
+        "the absolute rates on this machine swing by up to 4x within one session.",
+    ],
+  ];
+  const collected = {};
+
+  for (const n of [64, 128, 256]) {
+    const dt = cflDt(n);
+    const spec = {
+      model: "gray_scott",
+      params: {
+        ...PEARSON,
+        n,
+        dt,
+        t_max: FIELD_T_MAX,
+        initial: "pearson",
+        noise: 0.01,
+        mode_j: 7,
+        eps: 0.0,
+      },
+      replicates: 1,
+      seed: 2,
+      max_steps: Math.round(FIELD_T_MAX / dt) + 10,
+      record_every: 1000000, // recording scalars is not what this section measures
+    };
+    say(`gray-scott n = ${n}, dt = ${dt} ...`);
+    const created = await client.send("create", spec);
+
+    const stage = { step: [], colormap: [], convert: [], canvas: [], frame: [] };
+    const frames = 40;
+    const stepsPerFrame = 10;
+    let previousCompute = 0;
+    const started = performance.now();
+
+    for (let f = 0; f < frames; f++) {
+      const frameStart = performance.now();
+      const status = await client.send("advance", {
+        run_id: created.run_id,
+        n_steps: stepsPerFrame,
+      });
+      stage.step.push((status.compute_seconds - previousCompute) * 1000);
+      previousCompute = status.compute_seconds;
+
+      const field = await client.send("field", {
+        run_id: created.run_id,
+        field: "v",
+        cmap: "ember",
+        // A FIXED range, not autoscaled. An autoscaled field draws a pattern
+        // decaying to nothing exactly like one at full strength.
+        vmin: 0.0,
+        vmax: 0.45,
+      });
+      stage.colormap.push(field.colormap_ms);
+      stage.convert.push(field.convert_ms);
+
+      const t0 = performance.now();
+      fieldView.put(field.rgba, field);
+      stage.canvas.push(performance.now() - t0);
+      stage.frame.push(performance.now() - frameStart);
+
+      document.getElementById("field-range").textContent =
+        `v ∈ [${fmt(field.vmin)}, ${fmt(field.vmax)}] (fixed) · t = ${fmt(field.t)} · ${n}²`;
+      // Give the compositor a real frame to present. Without this the loop runs
+      // ahead of the display and the fps figure measures the loop, not the screen.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    const window_ = windowFrom(started);
+    await client.send("close", { run_id: created.run_id });
+
+    const med = (values) => quantile(values, 0.5);
+    const drawing = med(stage.colormap) + med(stage.convert) + med(stage.canvas);
+    const frame = med(stage.frame);
+    collected[n] = {
+      dt,
+      step_ms: med(stage.step),
+      colormap_ms: med(stage.colormap),
+      convert_ms: med(stage.convert),
+      canvas_ms: med(stage.canvas),
+      drawing_ms: drawing,
+      frame_ms: frame,
+      drawing_fraction: drawing / frame,
+      fps: window_.fps,
+      raf_valid: window_.raf_valid,
+      steps_per_s: (frames * stepsPerFrame) / (window_.span_s || 1),
+    };
+    rows.push([
+      `${n}² · dt ${dt}`,
+      `step ${fmt(med(stage.step))} ms · colormap ${fmt(med(stage.colormap))} · ` +
+        `wasm→JS ${fmt(med(stage.convert))} · canvas ${fmt(med(stage.canvas))} · ` +
+        `drawing ${fmt(drawing)} ms = ${((drawing / frame) * 100).toFixed(1)}% of a ` +
+        `${fmt(frame)} ms frame`,
+    ]);
+    rows.push([
+      `${n}² on screen`,
+      window_.raf_valid
+        ? `${window_.fps.toFixed(0)} fps, worst frame ${window_.raf_worst_ms.toFixed(0)} ms, ` +
+          `event loop blocked at most ${window_.blocked_ms.toFixed(0)} ms`
+        : "no frames — the tab is hidden, so this figure is absent rather than slow",
+      window_.raf_valid ? "ok" : "bad",
+    ]);
+  }
+
+  // A finer grid pays twice, and simulated time per second is the figure that
+  // shows it: steps/s falls AND dt falls with it.
+  rows.push([
+    "simulated time per second",
+    [64, 128, 256]
+      .map((n) => `${n}²: ${(collected[n].steps_per_s * collected[n].dt).toFixed(1)}`)
+      .join("  ·  ") + "   time-units/s — the drop is steeper than the frame rate suggests",
+  ]);
+
+  window._fieldReport = collected;
+  defList("field-report", rows);
+  fieldButton.disabled = false;
+  say("fields done");
+}
+
+// -------------------------------------------------------------------------
+// Autorun, for a real visible window (see check.html for why).
+// -------------------------------------------------------------------------
+const autorun = new URLSearchParams(location.search).get("autorun");
+if (autorun) {
+  say("autorun ...");
+  await runTraces();
+  await runFields();
+  await fetch(`/results/${autorun}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      {
+        visibility: document.visibilityState,
+        devicePixelRatio: window.devicePixelRatio,
+        build,
+        traces: window._traceReport,
+        trace_report_text: document.getElementById("trace-report").innerText,
+        fields: window._fieldReport,
+        field_report_text: document.getElementById("field-report").innerText,
+        log: logEl.textContent,
+      },
+      null,
+      2
+    ),
+  });
+  say("autorun: posted");
+}
+</script>
+</body>
+</html>

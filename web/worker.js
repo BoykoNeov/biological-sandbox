@@ -294,6 +294,10 @@ self.onmessage = async (event) => {
         payload = pyCall("web_fingerprint", JSON.stringify(arg));
         break;
       case "field": {
+        // Timed in two halves, because the measurement doc decomposes them and a
+        // single "drawing cost" would hide which half to look at if it ever grew:
+        // the numpy colormap, then getting the bytes out of the WASM heap.
+        const t0 = now();
         payload = pyCall(
           "web_field",
           arg.run_id,
@@ -303,7 +307,10 @@ self.onmessage = async (event) => {
           arg.vmax == null ? null : arg.vmax,
           arg.replicate || 0
         );
+        const t1 = now();
         const rgba = grabFieldBytes();
+        payload.colormap_ms = t1 - t0;
+        payload.convert_ms = now() - t1;
         self.postMessage({ id, payload, rgba }, [rgba.buffer]);
         return;
       }
