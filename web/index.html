@@ -359,13 +359,31 @@ document.getElementById("run-d").addEventListener("click", async () => {
   rows.push([
     "do the ends separate?",
     resolved
-      ? `yes — Ω = ${a.omega} sits ${(gap / combined).toFixed(1)} standard errors above ` +
-        `Ω = ${c.omega}. Ω^(−1/2) predicts a fall by a factor of ${ratio.toFixed(1)}; ` +
-        `measured ${(a.D / c.D).toFixed(2)}.`
+      ? `yes — Ω = ${a.omega} sits ${(gap / combined).toFixed(1)} standard errors above Ω = ${c.omega}.`
       : `NO — the ends differ by only ${(gap / combined).toFixed(1)} standard errors, which ` +
         "settles nothing. Run it again with a different seed and the order may change. " +
         "That is the sample size talking.",
     resolved ? "ok" : "warn",
+  ]);
+
+  // The measured ratio needs ITS OWN error bar, or the row reads as theory
+  // missing by 20% when the two are in fact consistent. A bare measured number
+  // printed beside a bare prediction quietly implies a discrepancy, which is the
+  // same failure as quietly implying agreement.
+  const measuredRatio = a.D / c.D;
+  const relative = Math.hypot(a.sem / a.D, c.sem / c.D);
+  const ratioSem = measuredRatio * relative;
+  const sigma = Math.abs(measuredRatio - ratio) / ratioSem;
+  rows.push([
+    "against the prediction",
+    `Ω^(−1/2) predicts a fall by a factor of ${ratio.toFixed(2)} between these two. ` +
+      `Measured: ${measuredRatio.toFixed(2)} ± ${ratioSem.toFixed(2)}, which puts the ` +
+      `prediction ${sigma.toFixed(1)} standard errors away — ` +
+      (sigma < 2
+        ? "consistent, and about as much as six replicates can say."
+        : "further out than six replicates would usually land. One seed is not a result; " +
+          "run it again before reading anything into it."),
+    sigma < 2 ? "ok" : "warn",
   ]);
   rows.push([
     "and still not the claim",

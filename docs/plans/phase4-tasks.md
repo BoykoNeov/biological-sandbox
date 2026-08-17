@@ -379,7 +379,34 @@ close-out's `225.80-303.91 s` and the `373.81 s` re-run are from different machi
 states. What survives contention is the *decomposition*, because both arms were
 contended together.
 
-## 9. What this phase does not establish
+## 9. Deferred, and not silently
+
+Three things the plan raises that this phase did **not** build. None is a
+blocker; all are stated rather than dropped.
+
+- **No "export a figure" action.** The plan's 4b says matplotlib *"belongs behind
+  an explicit 'export a figure' action that loads it on demand — not on the path
+  a reader takes to see anything."* The constraint is satisfied — matplotlib is
+  absent from the bundle, and the 9.01 MB cold load in §4 is the core-only figure
+  rather than the 18.4 MB one — but the on-demand action itself was not written.
+  A page that wants a static PNG would need it; nothing here does.
+- **No model picker in the UI.** 4a's deliverable is that *any* registered model
+  runs in a worker, and that is true of the bridge and exercised natively: the
+  registry check covers all 14, `describe` reports each model's capabilities from
+  `isinstance` against the protocol classes, and `default_params` exists to
+  pre-fill a form. But the pages only ever drive three models. The `describe`-
+  driven picker is UI work with no measurement in it.
+- **The `stop` button is untested.** The path reads correctly — `cancel` sets the
+  flag, the worker's loop breaks at the next chunk boundary, `terminal` stays
+  false, and the "reached the end" row reports *"stopped early"* — but it was
+  never actually clicked. Noted rather than claimed.
+
+And one thing the plan raises that correctly needed **no** action: the WebGL
+trap. The default answer stayed no. Nothing here was tempted, because the drawing
+path is 6% of a frame and a shader would be a second implementation of a
+validated model's numerics in a language no test here can reach.
+
+## 10. What this phase does not establish
 
 - **A real network.** §4 measures throughput at a known byte rate. Latency, slow
   start, loss, CDN behaviour and mobile radios are not modelled.
