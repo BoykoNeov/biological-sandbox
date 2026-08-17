@@ -18,7 +18,8 @@ statistically-derived tolerance.
 ## Two kinds of software (kept apart on purpose)
 
 - **Verifiable models — the core.** Wright-Fisher, Gillespie/repressilator,
-  Hodgkin-Huxley, Gray-Scott. Each has a checkable claim. "Correct" is testable.
+  Hodgkin-Huxley, Gray-Scott, generalized Lotka-Volterra, Daisyworld, adaptive
+  dynamics, and eight more. Each has a checkable claim. "Correct" is testable.
 - **Generative systems — the speculative arc.** Ecosystem / biosphere
   simulation. No ground truth. Legitimate *exploratory artificial life* (lineage:
   Tierra, Avida, Polyworld) — but **labelled as exploration, never prediction.**
@@ -29,9 +30,26 @@ honest treatment of the speculative arc.
 
 ## Status
 
-**Phase 0 — Wright-Fisher vertical slice.** The thinnest complete path through
-the whole architecture (`protocol → model → recorder → sweep → validation`),
-with the neutral fixation-probability check passing over many seeded replicates.
+**Phases 0-3 are complete.** The validated core is **14 registered models** plus
+`core/random_matrix.py`, and the suite is **718 tests, all passing**:
+
+| phase | what landed |
+|---|---|
+| 0 | Wright-Fisher, and the vertical slice through the whole architecture |
+| 1 | RK4 + the deterministic-limit protocol, the Gillespie engine, `birth_death` and `isomerization` (exact closed forms), the log-log convergence track, and the repressilator |
+| 2 | Hodgkin-Huxley (deterministic, voltage-clamp, and channel-noise) and Gray-Scott |
+| 3 | generalized Lotka-Volterra, the May / Allesina-Tang random community matrix, stochastic gLV, Daisyworld, adaptive dynamics, and trait branching |
+
+`models/ecosystem/` — the speculative quarantine — is still **empty**, and that
+is the intended outcome, not an omission: nothing so far required giving up a
+checkable prediction.
+
+The `HANDOFF.md` §4 browser-vs-local fork is the open decision. It has now been
+**measured** rather than argued: see
+[`docs/plans/phase4-browser-fork-measurement.md`](docs/plans/phase4-browser-fork-measurement.md).
+The short version — the core runs unmodified in a browser under Pyodide at about
+**2x** native, and six of the models reproduce their trajectories **bit-for-bit**
+in WebAssembly.
 
 ## Quickstart
 
@@ -71,9 +89,10 @@ sampling.
 
 ```
 src/sandbox/
-  core/        protocol, rng, recorder, sweep, validation, registry
-  models/      wright_fisher  (+ ecosystem/ — speculative, quarantined)
-  viz/         pluggable visualization backends (matplotlib for now)
+  core/        protocol, rng, recorder, sweep, validation, registry,
+               ode, convergence, laplacian, random_matrix
+  models/      the 14 validated models  (+ ecosystem/ — speculative, quarantined)
+  viz/         visualization backends (matplotlib is currently the only one)
   demos/       runnable end-to-end examples
 tests/         wraps the ValidationSuite into CI
 docs/plans/    per-phase dev docs (plan / context / tasks)
