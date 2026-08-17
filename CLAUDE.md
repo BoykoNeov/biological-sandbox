@@ -106,6 +106,24 @@ avoid, in a language no test here can reach.
 
 ## Status
 
+**Suite as of the close-out re-run: 929 passed, 12 skipped in 249.59 s at `-n 6`.**
+That is **one run, this machine, 2026-08-17, with no same-session baseline and the
+contention unknown**, so the wall clock compares to nothing here and is recorded
+only so a later reader knows what conditions the count was taken under. The
+*count* is the durable half: `929` is the recorded `928` plus the one test
+`d31a00b` added (`test_gray_scott.py`, the pin that Gray-Scott cannot be asked the
+selection question), which is why the two disagree by exactly one. **12 skips is
+the correct number with `--extra viz` installed** — a run reporting `1` skip is
+the whole viz module going quietly missing, not a cleaner suite.
+
+**The roadmap is closed and nothing is queued** (checked 2026-08-17). Phases 0-4
+plus 2c are built, `HANDOFF.md` §8 says there is no Phase 5 and that inventing one
+is not the next action, and 2c's one deferral carrying a trigger condition was taken
+and **measured out negative** — Gray-Scott cannot carry wavelength selection. Every
+remaining deferral is closed by measurement or by argument rather than waiting. So
+the honest answer to "what is next" is *nothing is pending*; continuing is a scope
+decision for the user to make, not one to infer from an unfinished-looking list.
+
 **Phase 2c is built: Schnakenberg, and the wavelength claim Phase 2 deferred.** It is
 **not** a new phase — `HANDOFF.md` §8 says there is no Phase 5 and that inventing one
 is not the next action — it is Phase 2's one explicitly deferred item, taken because
@@ -486,7 +504,9 @@ And the machine was contended by unrelated processes at ~25-30%, with **4x swing
 inside one session**, so only ratios and fractions are quoted as measurements.
 
 **Phases 0-3 are all complete.** The validated core is 14 models plus
-`core/random_matrix.py`; the `models/ecosystem/` quarantine is still **empty**,
+`core/random_matrix.py` — **15 since 2c registered `schnakenberg`**, which landed
+after Phase 4, so every "fourteen models" above is Phase-4-era and correct as
+written; the `models/ecosystem/` quarantine is still **empty**,
 and that remains the correct outcome. The suite was **720 passed in 373.81 s** at
 `-n 6` before Phase 4 added 56 (the Phase-3 close-out's `718` predates `fadfbe8`,
 which added two; see that close-out below for why a wall-clock number needs a

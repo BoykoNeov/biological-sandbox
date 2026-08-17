@@ -130,6 +130,16 @@ variance `sigma^2`, radius `R = sigma sqrt(SC)`):
   **not resolved** — at `Omega = 25, 50` the SE exceeds the signal. **The bias
   cannot be measured where it is largest.** Open item; do not write "confirmed".
 
+  > **Closed in 3c** — see `docs/plans/phase3-tasks.md`, which carries the same
+  > note in full. Two things changed. The formula needed generalizing: `x*/Omega`
+  > is `(-A)^-1 diag|A_ii| 1 / Omega` specialized to a system where
+  > `diag|A_ii| 1 = r`, true of the symmetric 2-species reference above and false
+  > of 3a's asymmetric one. And the finding here **survives a 6.7x better
+  > instrument** — split-coupled at `T = 500` still leaves `Omega = 50`
+  > unresolved (`-7.19e-4 +/- 1.13e-2`). So the sentence stands; only the word
+  > "open" is retired. Recorded slopes `-1.0525 / -0.9945 / -0.8522`, each within
+  > 1.1 sigma of `-1` and 2.6-8.9 sigma from `-1/2`.
+
 **Daisyworld** (`S = 917`, `q = 2.06e9`, `gamma = 0.3`, albedos `0.75/0.25/0.5`,
 `T_opt = 295.5`, `beta` coefficient `0.003265`):
 

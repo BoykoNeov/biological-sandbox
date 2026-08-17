@@ -224,6 +224,16 @@ it** — see the deviation note in §4 above and the measurement documents:
 - `docs/plans/phase4-tasks.md` — what was built, and every number with the
   conditions it needs.
 
+**Phase 2c was then built, and it is not a Phase 5** — it is the one item §5
+above explicitly deferred, taken because that deferral's stated reason was half
+wrong. See the §5 deviation note. It also carried the last deferral anywhere in
+these documents that had a *trigger condition* attached ("promote the spectral
+helpers when a second model wants them"), and taking it **measured out negative**:
+Gray-Scott's Turing bifurcation is subcritical, so there is no wavelength for
+linear theory to have predicted and the second caller does not exist
+(`docs/plans/phase2c-gray-scott-selection-measurement.md`). Nothing is pending
+behind it.
+
 **There is no Phase 5 in this document, and inventing one is not the next
 action.** What §6 sketched beyond here is the speculative arc, and Phase 3 took
 the three stops that still carry a checkable prediction. The
