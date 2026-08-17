@@ -95,10 +95,11 @@ ping-pong, which is a task rather than a timer and so survives the throttling.
 `performance.now()` is coarsened to **0.1 ms** outside a cross-origin-isolated
 page, so every single-shot sub-millisecond reading was a rounding artifact. And a
 `getBuffer()`-vs-`toJs()` comparison measured equal because **`toJs()` on a float64
-ndarray returns a `Float64Array`** — one operation spelled twice. Also a fifth
-wrong figure-claim: the first in-browser plot was a valid PNG with correct axes and
-**no data**, because its filter tested `startswith("m")` against observables named
-`x_m1 … x_p3`.
+ndarray returns a `Float64Array`** — one operation spelled twice. And the
+figure lesson recurred, in a new medium: the first plot rendered in a browser was a
+valid PNG with correct axes and **no data**, because its filter tested
+`startswith("m")` against observables named `x_m1 … x_p3`. (No ordinal — 3e retired
+the running count as broken; the lesson is what travels.)
 
 **Two things the slice does not establish, stated rather than buried.** Every probe
 ran with the tab hidden, so the drawing path's *CPU* cost is measured while

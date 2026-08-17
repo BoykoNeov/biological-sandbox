@@ -123,10 +123,20 @@ the main thread, and `validate()` runs and reports there.
   success, surfacing later as an unrelated-looking `ModuleNotFoundError`.
 
 **Done when:** the ValidationSuite's verdict in the browser matches native for
-Wright-Fisher and the repressilator, at the same tolerance; and the main thread's
-event loop is never blocked more than **50 ms** in any window, measured with the
-MessageChannel instrument from the slice — *not* with `requestAnimationFrame`,
-which cannot fail in a background tab.
+Wright-Fisher and the repressilator, at the same tolerance; and the main thread
+stays live, measured with the MessageChannel instrument from the slice — *not*
+with `requestAnimationFrame`, which cannot fail in a background tab.
+
+**The responsiveness criterion needs care, because the obvious number is one
+nothing can fail.** The slice's worker arm already measured **1-23 ms** blocked,
+and **45 ms** in its worst contended window — so a "never blocked more than 50 ms"
+bar is *inside the noise* and would ship green before any 4a code existed, which
+is the `assert std > 0.0` failure this project has caught five times. Treat the
+slice's band as a **regression guard**, not a pass mark: 4a's blocking must stay
+within the measured worker band, established against a **same-session** re-run of
+the slice, and any window past ~50 ms is a signal to look rather than evidence of
+success. The real pass mark is 4b's on-screen measurement, which is the thing no
+CPU timing can stand in for.
 
 ### 4b — The drawing path
 
