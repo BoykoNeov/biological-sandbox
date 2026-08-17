@@ -260,8 +260,9 @@ the field frozen to `6.9e-06` by `0.75 T`, and identical answers at 20, 60, 200 
 e-folds. Also recorded: the band is *wider* than 2c's worry (10-14 modes, `q` spanning
 4.75x), so the failure is flatness, not scarcity — and no `ndim` was added to Gray-Scott
 and no refusal written, because `initial` admits only `"mode"` and `"pearson"` and so
-the model **cannot be asked** the question. A test pins that (`+1`, 32 in the module),
-verified red by mutation.
+the model **cannot be asked** the question. One test pins that, verified red by
+mutation. The probes are **not committed**, so §5 writes the estimator down instead —
+the same trap 2c hit from the other side when no slice code survived.
 
 **Phase 4 — the browser front-end — is COMPLETE (4a, 4b, 4c), and its three
 recorded deferrals are now built too.** The record with every number is

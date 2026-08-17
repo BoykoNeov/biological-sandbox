@@ -283,6 +283,17 @@ Consequences, all of them "nothing to build":
 * All of it is 1-D. In 2-D the emergent structures differ, but the subcritical branch
   is a property of the reaction kinetics and the bistability demonstration does not
   depend on dimension.
+* **The probes are not committed** — they live outside the repo, so this document is
+  the only surviving record of its own instrument. That is the situation Phase 2c ran
+  into from the other side ("the convention had to be recovered, because no slice code
+  survives"), so the estimator is written down here rather than merely used: the 1-D
+  right-hand side is `core.laplacian.laplacian` and `core.ode.rk4_step` around the
+  four-line Gray-Scott RHS at the top of `models/gray_scott.py`, seeds are
+  `core.rng.spawn_rngs(11, R)`, step sizes are `0.36 x CFL` (1-D, `h^2/2D`) forced to
+  divide the horizon, the onset is `Dv_c = 1.421687e-05` by bisection on the continuum
+  band, and the whole thing is pinned to the repo by the `2.7e-07` match against
+  `dispersion()` in §0. **A number travels with its estimator**, and everything needed
+  to rebuild this one is in these lines.
 
 ---
 
