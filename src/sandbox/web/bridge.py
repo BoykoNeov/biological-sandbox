@@ -486,6 +486,30 @@ def discrepancy_to_limit(spec: dict[str, Any], *, n_grid: int = 200) -> dict[str
     # across the rest of the grid, quietly turning a truncation into a
     # discrepancy. Reported rather than silently averaged in.
     truncated = [i for i, r in enumerate(run.runners) if r.state.t < t_max]
+
+    # And the same hazard from the other direction. `_per_replicate_discrepancy`
+    # samples by step-hold — the value of the last event at or before each grid
+    # time — which is exact for an SSA only while the recording is *denser* than
+    # the grid. Record too coarsely and every grid point reads a stale value, and
+    # that error does not shrink with Omega: it would sit underneath D as a floor
+    # and flatten the very trend this function exists to show. Measured on the
+    # repressilator at Omega = 5 with a 200-point grid: 15 578 recorded points
+    # give D = 8.72, and 79 / 17 / 9 / 5 give 8.83 / 10.28 / 13.00 / 21.15.
+    #
+    # So it refuses rather than returning a number that still looks reasonable —
+    # the same posture as `check_grid_is_exact`, which exists in the convergence
+    # module for exactly this failure and for exactly this reason.
+    recorded = [len(r.trajectory.times) for r in run.runners]
+    if min(recorded) < int(n_grid):
+        raise ValueError(
+            f"record_every={experiment.record_every} is too coarse for this "
+            f"measurement: the sparsest replicate holds {min(recorded)} recorded "
+            f"points against a {int(n_grid)}-point comparison grid, so the "
+            "step-hold sampling would read stale values. That error is "
+            "Omega-INDEPENDENT, so it does not cancel — it floors D and flattens "
+            "the scaling. Lower record_every (1 is always safe) or lower n_grid."
+        )
+
     values = []
     for runner in run.runners:
         times, series = runner.trajectory.as_arrays()

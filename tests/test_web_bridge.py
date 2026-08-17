@@ -699,3 +699,131 @@ def test_two_runs_of_one_spec_agree():
     assert [fingerprint(r.trajectory) for r in first.runners] == [
         fingerprint(r.trajectory) for r in second.runners
     ]
+
+
+# --------------------------------------------------------------------------
+# 10. The three functions that shipped without tests
+#
+# fingerprint_spec, colormap_strip and discrepancy_to_limit landed in three
+# separate commits and the test count never moved -- which is a suite-level
+# version of the failure this file is otherwise about. The last of them turned
+# out to carry a real trap.
+# --------------------------------------------------------------------------
+
+
+def test_fingerprint_is_stable_across_calls_and_moves_with_the_seed():
+    first = bridge.fingerprint_spec(REPRESSILATOR_SPEC)
+    second = bridge.fingerprint_spec(REPRESSILATOR_SPEC)
+    assert first["digests"] == second["digests"]
+    assert len(first["digests"]) == REPRESSILATOR_SPEC["replicates"]
+    # Distinct replicates must not share a stream. If they did, the fingerprint
+    # would be stable, reproducible and measuring one run four times.
+    assert len(set(first["digests"])) == len(first["digests"])
+
+    moved = bridge.fingerprint_spec({**REPRESSILATOR_SPEC, "seed": 1234})
+    assert moved["digests"] != first["digests"]
+
+
+def test_the_fingerprint_is_of_the_same_run_the_bridge_would_stream():
+    """It must not be a second, differently-driven run that happens to agree."""
+    experiment = bridge.experiment_from_spec(REPRESSILATOR_SPEC)
+    run = bridge.Run("reference", experiment)
+    while not run.finished:
+        run.advance(37)
+    expected = [fingerprint(runner.trajectory) for runner in run.runners]
+    assert bridge.fingerprint_spec(REPRESSILATOR_SPEC)["digests"] == expected
+
+
+def test_colormap_strip_agrees_with_the_field_path_it_labels():
+    """The scale bar cannot be allowed to disagree with the picture it labels.
+
+    It is drawn from bytes the bridge produced through ``to_rgba`` — the same
+    call the field image goes through — so this asserts the two really are one
+    code path rather than two that currently match.
+    """
+    rgba, meta = bridge.colormap_strip("ember", width=256, height=3)
+    assert rgba.shape == (256 * 3 * 4,)
+    assert (meta["vmin"], meta["vmax"]) == (0.0, 1.0)
+
+    ramp = np.tile(np.linspace(0.0, 1.0, 256), (3, 1))
+    direct, _, _ = to_rgba(ramp, cmap="ember", vmin=0.0, vmax=1.0)
+    assert np.array_equal(rgba, direct)
+
+    # Every row of the strip is the same ramp, and it spans the whole table.
+    assert tuple(rgba[:3]) == tuple(lut("ember")[0])
+    assert tuple(rgba[256 * 4 - 4 : 256 * 4 - 1]) == tuple(lut("ember")[255])
+
+
+DISCREPANCY_SPEC = {
+    "model": "repressilator",
+    "params": {
+        "alpha": 216.0,
+        "alpha0": 0.216,
+        "n_hill": 2.0,
+        "beta": 1.0,
+        "Omega": 6.0,
+        "t_max": 3.0,
+    },
+    "replicates": 3,
+    "seed": 4,
+    "max_steps": 40000,
+    "record_every": 1,
+    "limit": {"t_max": 3.0, "dt": 0.005},
+}
+
+
+def test_discrepancy_reports_a_finite_positive_distance():
+    report = bridge.discrepancy_to_limit(DISCREPANCY_SPEC, n_grid=60)
+    assert report["available"] is True
+    assert report["truncated"] == []
+    assert report["D"] > 0.0
+    assert len(report["per_replicate"]) == DISCREPANCY_SPEC["replicates"]
+    # Distinct replicates give distinct distances; identical ones would mean the
+    # measurement is reading one trajectory several times.
+    assert len(set(report["per_replicate"])) == len(report["per_replicate"])
+    assert _strict_json(report)
+
+
+def test_discrepancy_refuses_a_recording_too_coarse_for_its_grid():
+    """The trap, and why it has to raise rather than return a plausible number.
+
+    ``_per_replicate_discrepancy`` samples by step-hold, which is exact for an
+    SSA only while the recording is denser than the comparison grid. Coarser than
+    that and every grid point reads a stale value — and that error is
+    **Omega-independent**, so it does not cancel between system sizes. It sits
+    under D as a floor and flattens the scaling, which is the one thing the
+    measurement exists to show. Measured on the repressilator at Omega = 5
+    against a 200-point grid, D read 8.72 with 15 578 recorded points and
+    8.83 / 10.28 / 13.00 / 21.15 with 79 / 17 / 9 / 5.
+    """
+    with pytest.raises(ValueError, match="Omega-INDEPENDENT"):
+        bridge.discrepancy_to_limit({**DISCREPANCY_SPEC, "record_every": 5000}, n_grid=60)
+
+
+def test_discrepancy_reports_replicates_that_never_reached_the_horizon():
+    """A truncated replicate holds its last value across the rest of the grid.
+
+    That turns "the run stopped" into "the run was far from the limit" — a large
+    discrepancy with no error anywhere. It is reported rather than averaged in
+    silently.
+    """
+    report = bridge.discrepancy_to_limit({**DISCREPANCY_SPEC, "max_steps": 500}, n_grid=60)
+    assert report["truncated"] == [0, 1, 2]
+
+
+def test_discrepancy_refuses_a_model_with_no_limit_to_be_far_from():
+    report = bridge.discrepancy_to_limit({**WF_SPEC, "limit": {"t_max": 5.0}})
+    assert report["available"] is False
+    assert "no ODE limit" in report["reason"]
+
+
+def test_compute_seconds_accumulates_and_only_counts_stepping():
+    run = bridge.Run("test", bridge.experiment_from_spec(REPRESSILATOR_SPEC))
+    assert run.compute_seconds == 0.0
+    first = run.advance(500)["compute_seconds"]
+    assert first > 0.0
+    # Draining is not stepping, and must not be charged as it: the whole point of
+    # the figure is to compare like with like across the worker and main thread.
+    run.drain()
+    assert run.status()["compute_seconds"] == first
+    assert run.advance(500)["compute_seconds"] > first
