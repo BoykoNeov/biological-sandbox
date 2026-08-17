@@ -678,7 +678,33 @@ def figure_png(
     axes[-1, 0].set_xlabel("time")
     if title:
         figure.suptitle(title)
-    figure.tight_layout()
+
+    # A PNG leaves the page WITHOUT the page's caption, and the caption is where
+    # the pages say whether every replicate reached the horizon. Without this, a
+    # figure exported from a stopped or under-budgeted run is precisely the wrong
+    # figure this project already shipped once: the replicates end part-way, the
+    # limit runs to the full horizon, and the right of the frame shows the limit
+    # alone and reads as perfect agreement. So the figure carries it itself.
+    reached = min((runner.state.t for runner in run.runners), default=0.0)
+    all_reached = all(runner.terminal for runner in run.runners)
+    if not all_reached and drawn_limits:
+        for ax in axes[:, 0]:
+            ax.axvline(reached, color="0.35", linestyle=":", linewidth=1.2)
+            ax.axvspan(reached, ax.get_xlim()[1], color="0.5", alpha=0.12, zorder=0)
+        figure.text(
+            0.5,
+            0.005,
+            f"Stopped early: not every replicate reached the horizon. Past t = {reached:.3g} "
+            "(shaded) the only line is the deterministic limit —\nthat gap is absence, not "
+            "agreement.",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#8a3b00",
+        )
+        figure.tight_layout(rect=(0, 0.04, 1, 1))
+    else:
+        figure.tight_layout()
 
     buffer = _io.BytesIO()
     figure.savefig(buffer, format="png", dpi=dpi)
@@ -701,6 +727,11 @@ def figure_png(
         "limit_drawn_for": drawn_limits,
         "recorded": [len(t.times) for t in trajectories],
         "terminal": [runner.terminal for runner in run.runners],
+        # Whether the figure carries its own stopped-early warning, so a caller can
+        # say the same thing beside it rather than having to re-derive it.
+        "all_reached": all_reached,
+        "reached_t": _finite(reached),
+        "warned_in_figure": bool(not all_reached and drawn_limits),
     }
     # As a uint8 array rather than bytes, so it leaves the WASM heap through the
     # same transfer path the field pixels already use.

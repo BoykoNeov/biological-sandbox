@@ -516,7 +516,11 @@ const exportButton = $("export");
 const exportNote = $("export-note");
 let lastRun = null;
 
-const figures = await client.send("figure_available");
+// Guarded: this runs at module top level, and a rejection would kill the module
+// script before any listener is attached -- an inert page with an empty console.
+const figures = await client
+  .send("figure_available")
+  .catch((error) => ({ available: false, ready: false, reason: error.message }));
 exportNote.textContent = figures.available
   ? "run something first; the figure is of that run"
   : "unavailable — " + (figures.reason || "matplotlib is not staged on this server");

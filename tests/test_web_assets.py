@@ -368,3 +368,39 @@ def test_the_import_is_priced_separately_from_the_drawing(finished_run):
     _, meta = bridge.figure_png(finished_run, ["x_m1"])
     assert meta["import_seconds"] >= 0.0
     assert meta["render_seconds"] > 0.0
+
+
+def test_a_stopped_run_carries_its_own_warning_into_the_png():
+    """A PNG leaves the page without the page's caption, so it must carry this itself.
+
+    The pages say whether every replicate reached the horizon, and separate "you
+    stopped it" from "the budget ran out". A figure exported from such a run is a
+    standalone file with none of that: the replicates end part-way, the limit runs
+    to the full horizon, and the right of every panel is the limit alone. That is
+    verbatim the wrong figure this project already shipped once — *"the right of
+    the frame showed the limit alone and read as perfect agreement"* — and an
+    export re-opens it unless the figure says so in its own ink.
+    """
+    truncated = {**FIGURE_SPEC, "max_steps": 300}  # nowhere near the horizon
+    status = bridge.SESSION.create(truncated)
+    run = bridge.SESSION.get(status["run_id"])
+    run.advance(300)
+    try:
+        limit = bridge.deterministic_limit(truncated)
+        data, meta = bridge.figure_png(status["run_id"], ["x_m1"], limit=limit)
+        assert meta["all_reached"] is False
+        assert meta["warned_in_figure"] is True
+        assert meta["reached_t"] < truncated["params"]["t_max"]
+        # The warning is drawn, not merely reported: the shaded region and the
+        # note put ink on the page that a full run does not have.
+        assert _ink(data)["red"] > 500  # the limit is still drawn
+    finally:
+        bridge.SESSION.close(status["run_id"])
+
+
+def test_a_complete_run_is_not_warned_about(finished_run):
+    """The tooth for the test above: a warning on every figure warns about nothing."""
+    limit = bridge.deterministic_limit(FIGURE_SPEC)
+    _, meta = bridge.figure_png(finished_run, ["x_m1"], limit=limit)
+    assert meta["all_reached"] is True
+    assert meta["warned_in_figure"] is False

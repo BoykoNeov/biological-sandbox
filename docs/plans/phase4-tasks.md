@@ -487,10 +487,30 @@ wasm, the lock and a numpy wheel are present and folding matplotlib into that
 test would silently skip it on an already-staged directory.
 
 **The constraint that justified the deferral was then verified rather than
-assumed.** A cold boot of `index.html` with all 13 MB staged still pulls
-**9.01 MB** — the recorded figure, unchanged — with **zero** matplotlib bytes on
-it. The page's own resource timeline shows four files; the worker's shows the
-runtime, numpy and the wheel and nothing else.
+assumed — and the first wording of the result was wrong.** A worker that only
+boots pulls **9.006 MB**, the recorded figure unchanged, and the phrase written
+into four places was *"zero matplotlib bytes"*. But the real page also calls
+`figure_available` at load, which the throwaway worker never did. Measuring the
+same worker **before and after** that call gives **9.006 → 9.032 MB**: `+26 KB`,
+being a re-read of `pyodide-lock.json` (the server sends `Cache-Control:
+no-store`, so nothing is cached) plus a `HEAD` on the matplotlib wheel costing
+**300 bytes of response headers with `decodedBodySize = 0`**.
+
+So the correct claim is **no matplotlib *body*, 300 bytes of headers**, and the
+cold load is **9.03 MB** rather than 9.01. The 2.1x bundle multiplication the
+deferral exists to avoid is still entirely absent. The correction is worth more
+than the 0.3% it changes: the original number was measured on an instrument that
+did not do what the page does, which is the same class of error as measuring in a
+hidden tab.
+
+A second untaken branch was then taken deliberately: moving the staged wheel aside
+and reloading, the page **still boots and still runs** — `run`, the D measurement
+and the validation all work — and only the export is disabled, reading
+*"matplotlib is in the lock but its wheel is not staged. Restart the server
+with: python web/serve.py --with-figures …"*. The top-level `figure_available`
+call is `.catch`-guarded for the same reason: a rejection there would kill the
+module script before any listener attached, which is the inert-page-with-empty-
+console signature this phase had already debugged once.
 
 Three costs are reported separately, because they differ by an order of magnitude
 and one number would misprice all three. Measured in the browser: **0.52 s** to
@@ -538,13 +558,19 @@ same global registry.
 
 ### 9e. Suite
 
-**844 passed, 11 skipped in 254.76 s** at `-n 6`, against a same-session baseline
-of **776 passed in 407.13 s** with the new module ignored. The suite is
-*faster* with 68 more tests in it, so — by this project's own rule, now on its
-fourth repetition — **the totals are not attributable to the test set** and no
-regression is visible. Three runs this session read `407 / 342 / 255 s`, a
-monotone drift larger than anything being measured. What is attributable is the
-new module's standalone cost: **2.2 s**.
+**846 passed, 11 skipped in 157.34 s** at `-n 6`, against a same-session baseline
+of **776 passed in 407.13 s** with the new module ignored. The suite is *faster*
+with 70 more tests in it, so — by this project's own rule, now on its fourth
+repetition — **the totals are not attributable to the test set** and no
+regression is visible.
+
+Four runs of the same command in one session read **`407 / 342 / 255 / 157 s`**:
+a **2.6x monotone drift**, far larger than anything being measured, and the
+sharpest illustration this project has yet produced of why a suite total is
+meaningless without a same-session baseline. (Earlier phases recorded `±30%`
+within a session; this is `2.6x`. The machine was shedding load from the
+concurrent browser automation and repeated pytest runs across the session.) What
+*is* attributable is the new module's standalone cost: **2.7 s**.
 
 And one thing the plan raises that correctly needed **no** action: the WebGL
 trap. The default answer stayed no. Nothing here was tempted, because the drawing

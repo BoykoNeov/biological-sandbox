@@ -240,13 +240,31 @@ let liveRun = null;
 // to disable the button and do nothing at all.
 let stopRequested = false;
 
+// try/finally so the controls always come back. Without it, any failure -- the
+// worker replies {id, error} on a mid-run Python exception and the client rejects
+// every pending request -- leaves the run button disabled forever with no message,
+// which is a page that looks like it is still working and is not.
 runButton.addEventListener("click", async () => {
   runButton.disabled = true;
   stopButton.disabled = false;
   stopRequested = false;
   document.getElementById("run-d").disabled = true;
   document.getElementById("run-validate").disabled = true;
+  try {
+    await doRun();
+  } catch (error) {
+    say(`the run stopped with an error: ${error.message}`);
+    defList("progress", [["the run stopped with an error", error.message, "bad"]]);
+  } finally {
+    liveRun = null;
+    runButton.disabled = false;
+    stopButton.disabled = true;
+    document.getElementById("run-d").disabled = false;
+    document.getElementById("run-validate").disabled = false;
+  }
+});
 
+async function doRun() {
   const omega = Number(document.getElementById("omega").value);
   const replicates = Number(document.getElementById("replicates").value);
   const seed = Number(document.getElementById("seed").value);
@@ -340,18 +358,13 @@ runButton.addEventListener("click", async () => {
   );
 
   lastRun = { run_id: created.run_id, omega, replicates, seed, limit };
-  liveRun = null;
-  runButton.disabled = false;
-  stopButton.disabled = true;
-  document.getElementById("run-d").disabled = false;
-  document.getElementById("run-validate").disabled = false;
   if (support.available) {
     exportButton.disabled = false;
     exportNote.textContent = support.ready
       ? "matplotlib is already loaded in this tab"
       : "the first export fetches matplotlib — the download the bundle does not carry";
   }
-});
+}
 
 stopButton.addEventListener("click", async () => {
   stopRequested = true;
@@ -375,7 +388,14 @@ const exportButton = document.getElementById("export");
 const exportNote = document.getElementById("export-note");
 let lastRun = null; // {run_id, spec, limit} — the run the figure would be OF
 
-const support = await client.send("figure_available");
+// Guarded, because this runs at module top level: a rejection here kills the
+// module script before the run listener is ever attached, and the page then hangs
+// with every button inert and nothing in the console -- the same signature as a
+// syntax error in the worker's embedded Python. A missing figure capability must
+// cost the figure button and nothing else.
+const support = await client
+  .send("figure_available")
+  .catch((error) => ({ available: false, ready: false, reason: error.message }));
 if (!support.available) {
   exportNote.textContent =
     "unavailable — " + (support.reason || "matplotlib is not staged on this server");

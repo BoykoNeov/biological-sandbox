@@ -144,9 +144,17 @@ wearing the costume of a number about the protocol.
 front end that fetches a package. matplotlib and its **eleven** dependencies
 multiply the gzipped download **2.1x — 8.7 MB to 18.4 MB** — to buy static PNGs,
 so they are *staged* beside the runtime by `serve.py --with-figures` and never
-fetched until somebody presses the button. Verified rather than asserted: a cold
-boot of `index.html` still pulls **9.01 MB**, the recorded figure, with zero
-matplotlib bytes on it.
+fetched until somebody presses the button.
+
+**Verified, and the first wording was wrong.** A cold boot measured on a worker
+that only boots reads **9.006 MB** — the recorded figure. But the real page also
+calls `figure_available` at load, and measuring the same worker *before and after*
+that call gives **9.006 → 9.032 MB**. The `+26 KB` is a re-read of
+`pyodide-lock.json` (the server sends `Cache-Control: no-store`, so nothing is
+cached) plus a `HEAD` on the matplotlib wheel costing **300 bytes of response
+headers with `decodedBodySize = 0`**. So the honest claim is **no matplotlib
+*body*, 300 bytes of headers** — not "zero bytes". The 2.1x bundle multiplication
+the deferral was about is still entirely absent from the cold path.
 
 The dependency closure is resolved from `pyodide-lock.json` transitively, never
 hand-typed, in both `serve.py` and the worker. A typed wheel name is a name that

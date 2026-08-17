@@ -119,13 +119,25 @@ bit-identical curves are named as one curve drawn three times rather than shown 
 a spread.
 
 **The figure export reuses `plot_replicates` rather than a second plotting path,
-matches limit columns by observable NAME (the wrong column is the right shape at
-the wrong phase), and the deferral's own constraint was verified rather than
-assumed: with all 13.09 MB of matplotlib wheels staged, a cold boot still pulls
-`9.01 MB` — the recorded figure, unchanged — with zero matplotlib bytes on it.**
-Costs are three numbers, not one: `0.52 s` local fetch-and-install (once per
-worker), `1.24 s` import, `0.58 s` draw. The browser's import is ~3x the native
-repeat because Pyodide has no persistent font cache.
+and matches limit columns by observable NAME** (the wrong column is the right
+shape at the wrong phase). **An exported PNG leaves the page without the page's
+caption, so it carries its own**: a figure of a run that stopped early shades the
+region past the last time every replicate reached, and says in its own ink that
+the gap is absence rather than agreement — otherwise the export re-opens the
+exact wrong figure this project already shipped.
+
+**The deferral's constraint was verified, and the first wording of the result was
+wrong.** A worker that only boots pulls `9.006 MB` — the recorded figure — and
+"zero matplotlib bytes" went into four documents. The real page also calls
+`figure_available` at load, which that instrument never did; measured before and
+after, it is `9.006 → 9.032 MB`. The `+26 KB` is a re-read of `pyodide-lock.json`
+(the server sends `no-store`) plus a `HEAD` on the wheel costing **300 bytes of
+headers with `decodedBodySize = 0`**. Correct claim: **no matplotlib *body*,
+300 bytes of headers.** Same class of error as measuring in a hidden tab — an
+instrument that did not do what the page does. Costs are three numbers, not one:
+`0.52 s` local fetch-and-install (once per worker), `1.24 s` import, `0.58 s`
+draw; the browser's import is ~3x the native repeat because Pyodide has no
+persistent font cache.
 
 **`tests/test_web_assets.py` (68 tests, 2.2 s, no browser) exists because every
 bug above was found by opening one.** It compiles the Python that `worker.js`
@@ -219,12 +231,14 @@ demonstration. **A fourth was corrected in the opposite direction**: the demo's
 the seed check had just disproved — being falsely modest about a measurement is
 the same failure as overclaiming it.
 
-**Suite (deferrals built): 844 passed, 11 skipped in 254.76 s at `-n 6`**, against
+**Suite (deferrals built): 846 passed, 11 skipped in 157.34 s at `-n 6`**, against
 a same-session baseline of **776 passed in 407.13 s** with the new module ignored
-— i.e. *faster with 68 more tests*, so by this project's own rule the totals are
-not attributable to the test set and no regression is visible. Three runs in that
-session read `407 / 342 / 255 s`, a drift larger than anything being measured.
-What is attributable is the module's standalone cost: **2.2 s**.
+— i.e. *faster with 70 more tests*, so by this project's own rule the totals are
+not attributable to the test set and no regression is visible. Four runs in that
+one session read **`407 / 342 / 255 / 157 s`** — a monotone `2.6x` drift, far
+larger than anything being measured, and the sharpest illustration this project
+has of why a suite total needs a same-session baseline. What *is* attributable is
+the new module's standalone cost: **2.7 s**.
 
 **Suite (Phase 4 close-out): 776 passed in 346.23 s at `-n 6`**, against a
 same-session baseline of **720 passed in 286.12 s** with the bridge tests ignored. The decomposition is
